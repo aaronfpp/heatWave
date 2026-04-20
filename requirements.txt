@@ -1,0 +1,25 @@
+# Dependencies for heatWave project
+
+# PDF / Text extraction
+PyMuPDF
+pdfplumber
+
+# OCR Fallback
+pdf2image
+pytesseract
+
+# Data validation
+pydantic
+
+# PDF Generation
+reportlab
+
+# Web UI (MVP)
+streamlit
+
+# Backend/API (optional, if moving beyond MVP)
+fastapi
+uvicorn
+
+# Testing
+pytest
