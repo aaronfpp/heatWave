@@ -25,6 +25,9 @@ pywebview
 Flask-Session
 waitress
 python-dotenv
+redis
+rq
+flask-limiter
 
 # Testing
 pytest

@@ -8,6 +8,7 @@ For a secure, public-facing web app, we recommend using a reverse proxy (like Ng
 
 ### Prerequisites
 - Python 3.10+
+- **Redis Server** (for task queuing and sessions)
 - (Optional but recommended) Nginx or Apache for reverse proxy.
 
 ### Steps
@@ -26,11 +27,20 @@ For a secure, public-facing web app, we recommend using a reverse proxy (like Ng
    SECRET_KEY=your-random-secret-key-here
    PORT=8080
    HOST=0.0.0.0
+   REDIS_URL=redis://localhost:6379/0
    ```
 
-3. **Run with Waitress**:
+3. **Run the Services**:
+   You need to run both the web server and at least one worker process.
+
+   **Terminal 1 (Web Server):**
    ```bash
    python run_server.py
+   ```
+
+   **Terminal 2 (Worker):**
+   ```bash
+   python run_worker.py
    ```
 
 4. **Reverse Proxy (Nginx Example)**:
@@ -84,6 +94,11 @@ If the application fails to launch or behaves unexpectedly:
 
 ---
 
-## Security Notes
-- **Data Privacy**: This app stores temporary session data in the system's temp folder (`/tmp` or `%TEMP%`). On a shared server, ensure appropriate permissions are set.
-- **HTTPS**: Always serve the public web app over HTTPS to protect user-uploaded PDF data.
+## Security & Robustness
+- **Data Privacy**: This app stores temporary session data in Redis or the system's temp folder. Ensure Redis is secured (e.g., password protected, not exposed publicly).
+- **HTTPS**: Always serve the public web app over HTTPS. The app is configured with `ProxyFix` to respect headers from your load balancer.
+- **Queue Fairness & CPU Protection**: 
+  - Each job has a 5-minute timeout to prevent runaway processes.
+  - Rate limiting is enforced via `Flask-Limiter` to prevent API abuse.
+  - To increase throughput, start multiple `run_worker.py` instances.
+  - To protect CPU, limit the number of worker instances to your available core count.

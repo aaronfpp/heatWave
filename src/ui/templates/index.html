@@ -46,6 +46,7 @@
       font-size: 1.6em;
       background: var(--gradient);
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
       font-weight: 800;
       letter-spacing: -0.5px;
@@ -165,6 +166,7 @@
       font-weight: 700;
       background: var(--gradient);
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
     }
     .metric-label { font-size: .78em; color: var(--text-dim); margin-top: 4px; }
@@ -409,6 +411,29 @@ fileInput.addEventListener('change', e => {
   if (e.target.files.length) uploadFile(e.target.files[0]);
 });
 
+/* ====== POLLING HELPER ====== */
+async function pollJob(jobId, onProgress) {
+  while (true) {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    const data = await res.json();
+    
+    if (data.status === 'finished') {
+      // Apply the result to the session
+      await fetch(`/api/jobs/${jobId}/apply`, { method: 'POST' });
+      return data.result;
+    }
+    
+    if (data.status === 'failed' || data.status === 'error') {
+      throw new Error(data.exc_info || 'Job failed on server');
+    }
+    
+    if (onProgress) onProgress(data.status);
+    
+    // Wait 1 second before next poll
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
+
 /* ====== UPLOAD ====== */
 async function uploadFile(file) {
   if (!file.name.toLowerCase().endsWith('.pdf')) {
@@ -417,7 +442,7 @@ async function uploadFile(file) {
   }
 
   const status = document.getElementById('uploadStatus');
-  status.innerHTML = `<div style="display:flex;align-items:center;gap:8px;"><span class="spinner"></span> Parsing <strong>${file.name}</strong>…</div>`;
+  status.innerHTML = `<div style="display:flex;align-items:center;gap:8px;"><span class="spinner"></span> Uploading <strong>${file.name}</strong>…</div>`;
 
   const form = new FormData();
   form.append('file', file);
@@ -428,21 +453,39 @@ async function uploadFile(file) {
 
     if (!res.ok || data.error) {
       status.innerHTML = `<div style="color:var(--error);">❌ ${data.error || 'Upload failed'}</div>`;
+      toast('Upload error', 'error');
+      return;
+    }
+
+    let result = data;
+    if (data.async) {
+      status.innerHTML = `<div style="display:flex;align-items:center;gap:8px;"><span class="spinner"></span> Server is parsing <strong>${file.name}</strong>…</div>`;
+      result = await pollJob(data.job_id);
+    }
+
+    if (!result.success) {
+      status.innerHTML = `<div style="color:var(--error);">❌ ${result.error || 'Parse failed'}</div>`;
       toast('Parse error', 'error');
       return;
     }
 
-    parsedEvents = data;
-    status.innerHTML = `<div style="color:var(--success);">✅ Parsed <strong>${data.event_count}</strong> events and <strong>${data.total_entries}</strong> entries from <strong>${data.filename}</strong></div>`;
+    parsedEvents = {
+        event_count: result.event_count,
+        total_entries: result.total_entries,
+        events: result.events_summary || result.events,
+        filename: result.filename
+    };
+    
+    status.innerHTML = `<div style="color:var(--success);">✅ Parsed <strong>${parsedEvents.event_count}</strong> events and <strong>${parsedEvents.total_entries}</strong> entries from <strong>${parsedEvents.filename}</strong></div>`;
     toast('PDF parsed successfully!', 'success');
 
     enableTabs('preview', 'settings', 'generate');
-    renderPreview(data);
+    renderPreview(parsedEvents);
     showPanel('preview');
 
   } catch (err) {
-    status.innerHTML = `<div style="color:var(--error);">❌ Network error: ${err.message}</div>`;
-    toast('Connection error', 'error');
+    status.innerHTML = `<div style="color:var(--error);">❌ Error: ${err.message}</div>`;
+    toast('Processing error', 'error');
   }
 }
 
@@ -482,9 +525,9 @@ async function doGenerate() {
   const fill = document.getElementById('genFill');
 
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Generating…';
+  btn.innerHTML = '<span class="spinner"></span> Starting…';
   progress.style.display = 'block';
-  fill.style.width = '30%';
+  fill.style.width = '10%';
 
   const lanes = document.getElementById('numLanes').value;
 
@@ -495,24 +538,41 @@ async function doGenerate() {
       body: JSON.stringify({ lanes: parseInt(lanes) }),
     });
     const data = await res.json();
-    fill.style.width = '100%';
 
     if (!res.ok || data.error) {
       results.innerHTML = `<div style="color:var(--error);">❌ ${data.error}</div>`;
       toast('Generation failed', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '🚀 Generate Heat Sheets';
       return;
     }
 
-    generatedEvents = data;
+    let result = data;
+    if (data.async) {
+      fill.style.width = '40%';
+      btn.innerHTML = '<span class="spinner"></span> Processing…';
+      result = await pollJob(data.job_id, (status) => {
+          if (status === 'started') fill.style.width = '70%';
+      });
+    }
+
+    if (!result.success) {
+      results.innerHTML = `<div style="color:var(--error);">❌ ${result.error || 'Generation failed'}</div>`;
+      toast('Generation error', 'error');
+      return;
+    }
+
+    fill.style.width = '100%';
+    generatedEvents = result;
 
     // Show results
-    const avgPerHeat = data.total_heats > 0 ? (data.total_entries / data.total_heats).toFixed(1) : 0;
+    const avgPerHeat = result.total_heats > 0 ? (result.total_entries / result.total_heats).toFixed(1) : 0;
     results.innerHTML = `
       <div class="metrics">
-        <div class="metric"><div class="metric-value">${data.total_heats}</div><div class="metric-label">Total Heats</div></div>
-        <div class="metric"><div class="metric-value">${data.total_entries}</div><div class="metric-label">Assigned</div></div>
+        <div class="metric"><div class="metric-value">${result.total_heats}</div><div class="metric-label">Total Heats</div></div>
+        <div class="metric"><div class="metric-value">${result.total_entries}</div><div class="metric-label">Assigned</div></div>
         <div class="metric"><div class="metric-value">${avgPerHeat}</div><div class="metric-label">Avg/Heat</div></div>
-        <div class="metric"><div class="metric-value">${data.events.length}</div><div class="metric-label">Events</div></div>
+        <div class="metric"><div class="metric-value">${result.summary ? result.summary.length : result.events.length}</div><div class="metric-label">Events</div></div>
       </div>
     `;
 
@@ -520,8 +580,9 @@ async function doGenerate() {
     const dlCard = document.getElementById('downloadCard');
     dlCard.style.display = 'block';
 
+    const eventsList = result.summary || result.events;
     const indivDiv = document.getElementById('individualDownloads');
-    indivDiv.innerHTML = data.events.map(e =>
+    indivDiv.innerHTML = eventsList.map(e =>
       `<button class="btn btn-secondary" onclick="downloadEvent(${e.event_number})">
          Event ${e.event_number} (${e.heats}h)
        </button>`

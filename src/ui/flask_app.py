@@ -14,9 +14,16 @@ from datetime import datetime
 
 from flask import Flask, request, jsonify, send_file, render_template, session
 from flask_session import Session
+from werkzeug.middleware.proxy_fix import ProxyFix
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
 
 load_dotenv()  # Load environment variables from .env
+
+# Queue and tasks
+from src.ui.queue_manager import task_queue, get_job_status, redis_conn
+from src.ui.tasks import parse_pdf_task, seeding_task, generate_pdf_task
 
 # ---------------------------------------------------------------------------
 # Resolve paths for both dev and frozen (PyInstaller) mode
@@ -33,16 +40,35 @@ app = Flask(__name__, template_folder=str(_TEMPLATE_DIR))
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max upload
 
 # ---------------------------------------------------------------------------
+# Reverse Proxy Support
+# ---------------------------------------------------------------------------
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+# ---------------------------------------------------------------------------
+# Rate Limiting
+# ---------------------------------------------------------------------------
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri=os.environ.get('REDIS_URL', 'memory://'),
+)
+
+# ---------------------------------------------------------------------------
 # Configure Flask-Session (multi-user isolation)
 # ---------------------------------------------------------------------------
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'heatwave-dev-secret-key-123')
-app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_FILE_DIR'] = tempfile.gettempdir() + '/heatwave_sessions'
+
+if redis_conn:
+    app.config['SESSION_TYPE'] = 'redis'
+    app.config['SESSION_REDIS'] = redis_conn
+else:
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = tempfile.gettempdir() + '/heatwave_sessions'
+    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = True
-
-# Ensure the session directory exists
-os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
 
 Session(app)
 
@@ -66,6 +92,7 @@ def index():
 
 
 @app.route('/api/upload', methods=['POST'])
+@limiter.limit("10 per minute")
 def upload_pdf():
     """Upload and parse a psych-sheet PDF."""
     if 'file' not in request.files:
@@ -76,106 +103,81 @@ def upload_pdf():
         return jsonify({'error': 'Empty filename'}), 400
 
     try:
-        # Save to a temp file, extract, then delete
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
-            pdf_file.save(tmp)
-            tmp_path = tmp.name
-
-        text = extract_text_from_pdf(tmp_path)
-        events = parse_events_from_text(text)
-        Path(tmp_path).unlink(missing_ok=True)
-
-        # Store parsed events in session
-        session['events'] = events
-        session['heat_sheets'] = None  # reset any prior generation
-
-        # Build a JSON-friendly summary
-        events_summary = []
-        for ev in events:
-            entry_samples = []
-            for e in ev.entries[:5]:
-                if isinstance(e, Entry):
-                    entry_samples.append({
-                        'type': 'individual',
-                        'name': e.swimmer.name,
-                        'age': e.swimmer.age,
-                        'team': e.swimmer.team_code,
-                        'seed_time': e.seed_time,
-                    })
-                else:
-                    entry_samples.append({
-                        'type': 'relay',
-                        'team': e.team_name,
-                        'seed_time': e.seed_time,
-                    })
-
-            events_summary.append({
-                'number': ev.number,
-                'name': ev.name,
-                'gender': ev.gender,
-                'distance': ev.distance,
-                'stroke': ev.stroke,
-                'entry_count': len(ev.entries),
-                'sample_entries': entry_samples,
+        pdf_bytes = pdf_file.read()
+        
+        if task_queue:
+            # Asynchronous mode (Server)
+            job = task_queue.enqueue(
+                parse_pdf_task, 
+                args=(pdf_bytes, pdf_file.filename),
+                job_timeout='5m'
+            )
+            return jsonify({
+                'success': True,
+                'async': True,
+                'job_id': job.get_id()
             })
+        else:
+            # Synchronous fallback (Desktop)
+            result = parse_pdf_task(pdf_bytes, pdf_file.filename)
+            if not result['success']:
+                return jsonify({'error': result.get('error', 'Unknown error')}), 500
+            
+            # Store parsed events in session
+            session['events'] = result['raw_events']
+            session['heat_sheets'] = None
 
-        total_entries = sum(len(ev.entries) for ev in events)
-
-        return jsonify({
-            'success': True,
-            'filename': pdf_file.filename,
-            'event_count': len(events),
-            'total_entries': total_entries,
-            'events': events_summary,
-        })
+            return jsonify({
+                'success': True,
+                'async': False,
+                'filename': result['filename'],
+                'event_count': result['event_count'],
+                'total_entries': result['total_entries'],
+                'events': result['events_summary'],
+            })
 
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
 
 
 @app.route('/api/generate', methods=['POST'])
+@limiter.limit("5 per minute")
 def generate():
     """Seed events and generate heat sheets."""
-    if session['events'] is None:
+    if session.get('events') is None:
         return jsonify({'error': 'No events parsed yet. Upload a PDF first.'}), 400
 
     data = request.get_json(silent=True) or {}
     num_lanes = int(data.get('lanes', 8))
 
     try:
-        heat_sheets = []
-        for event in session['events']:
-            if event.entries:
-                hs = seed_event(event, lanes=num_lanes)
-                heat_sheets.append(hs)
-
-        session['heat_sheets'] = heat_sheets
-
-        # Summary for the frontend
-        summary = []
-        for hs in heat_sheets:
-            heats_by_num = {}
-            for a in hs.assignments:
-                heats_by_num.setdefault(a.heat, []).append(a)
-            heat_sizes = [len(heats_by_num.get(h, [])) for h in range(1, hs.heats + 1)]
-
-            summary.append({
-                'event_number': hs.event.number,
-                'event_name': f"{hs.event.gender} {hs.event.distance}Y {hs.event.stroke}",
-                'heats': hs.heats,
-                'entries': len(hs.assignments),
-                'heat_distribution': heat_sizes,
+        if task_queue:
+            # Asynchronous mode
+            job = task_queue.enqueue(
+                seeding_task,
+                args=(session['events'], num_lanes),
+                job_timeout='5m'
+            )
+            return jsonify({
+                'success': True,
+                'async': True,
+                'job_id': job.get_id()
             })
+        else:
+            # Synchronous fallback
+            result = seeding_task(session['events'], num_lanes)
+            if not result['success']:
+                return jsonify({'error': result.get('error', 'Unknown error')}), 500
 
-        total_heats = sum(hs.heats for hs in heat_sheets)
-        total_entries = sum(len(hs.assignments) for hs in heat_sheets)
+            session['heat_sheets'] = result['heat_sheets']
 
-        return jsonify({
-            'success': True,
-            'total_heats': total_heats,
-            'total_entries': total_entries,
-            'events': summary,
-        })
+            return jsonify({
+                'success': True,
+                'async': False,
+                'total_heats': result['total_heats'],
+                'total_entries': result['total_entries'],
+                'events': result['summary'],
+            })
 
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
@@ -251,14 +253,45 @@ def download_event_pdf(event_num):
 @app.route('/api/status', methods=['GET'])
 def status():
     """Return current session status for the frontend."""
-    has_events = session['events'] is not None
-    has_heats = session['heat_sheets'] is not None
+    has_events = session.get('events') is not None
+    has_heats = session.get('heat_sheets') is not None
     return jsonify({
         'has_events': has_events,
         'has_heats': has_heats,
         'event_count': len(session['events']) if has_events else 0,
         'heat_sheet_count': len(session['heat_sheets']) if has_heats else 0,
     })
+
+
+@app.route('/api/jobs/<job_id>', methods=['GET'])
+def job_status(job_id):
+    """Check the status of a background job."""
+    status_info = get_job_status(job_id)
+    return jsonify(status_info)
+
+
+@app.route('/api/jobs/<job_id>/apply', methods=['POST'])
+def apply_job_result(job_id):
+    """
+    Take the result of a finished job and apply it to the user's session.
+    This is necessary because workers don't share the Flask session.
+    """
+    status_info = get_job_status(job_id)
+    if status_info['status'] != 'finished':
+        return jsonify({'error': 'Job not finished or not found'}), 400
+    
+    result = status_info['result']
+    if not result.get('success'):
+        return jsonify({'error': result.get('error', 'Job failed')}), 500
+
+    # Apply based on what kind of job it was
+    if 'raw_events' in result:
+        session['events'] = result['raw_events']
+        session['heat_sheets'] = None
+    elif 'heat_sheets' in result:
+        session['heat_sheets'] = result['heat_sheets']
+    
+    return jsonify({'success': True})
 
 
 # ---------------------------------------------------------------------------
