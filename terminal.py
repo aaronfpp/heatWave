@@ -39,6 +39,12 @@ class HeatWaveTerminal:
         # Get or create user session
         self._init_session()
 
+    def _apply_job(self, job_id: str) -> None:
+        """Apply a finished job result to the user's server-side session."""
+        resp = self.session.post(f'{self.base_url}/api/jobs/{job_id}/apply')
+        if resp.status_code != 200 and self.verbose:
+            print(f"⚠️  Could not apply job result to session (HTTP {resp.status_code})")
+
     def _init_session(self):
         """Initialize user session."""
         try:
@@ -90,7 +96,8 @@ class HeatWaveTerminal:
         print(f"📤 Uploading: {pdf_file.name}")
 
         with open(pdf_file, 'rb') as f:
-            files = {'pdf': (pdf_file.name, f, 'application/pdf')}
+            # Flask expects request.files['file'] (matches browser UI)
+            files = {'file': (pdf_file.name, f, 'application/pdf')}
             response = self.session.post(f'{self.base_url}/api/upload', files=files)
 
         if response.status_code != 200:
@@ -108,7 +115,9 @@ class HeatWaveTerminal:
             if job_result.get('status') == 'finished':
                 result = job_result.get('result', {})
                 if result.get('success'):
-                    print("✅ PDF parsed successfully!"                    print(f"   Events: {result.get('event_count', 0)}")
+                    self._apply_job(job_id)
+                    print("✅ PDF parsed successfully!")
+                    print(f"   Events: {result.get('event_count', 0)}")
                     print(f"   Entries: {result.get('total_entries', 0)}")
                     return True
                 else:
@@ -120,7 +129,8 @@ class HeatWaveTerminal:
         else:
             # Synchronous result
             if data.get('success'):
-                print("✅ PDF parsed successfully!"                print(f"   Events: {data.get('event_count', 0)}")
+                print("✅ PDF parsed successfully!")
+                print(f"   Events: {data.get('event_count', 0)}")
                 print(f"   Entries: {data.get('total_entries', 0)}")
                 return True
             else:
@@ -149,7 +159,9 @@ class HeatWaveTerminal:
             if job_result.get('status') == 'finished':
                 result = job_result.get('result', {})
                 if result.get('success'):
-                    print("✅ Heat sheets generated successfully!"                    print(f"   Events: {result.get('event_count', 0)}")
+                    self._apply_job(job_id)
+                    print("✅ Heat sheets generated successfully!")
+                    print(f"   Events: {result.get('event_count', 0)}")
                     print(f"   Heats: {result.get('total_heats', 0)}")
                     print(f"   Entries: {result.get('total_entries', 0)}")
                     return True
@@ -162,7 +174,8 @@ class HeatWaveTerminal:
         else:
             # Synchronous result
             if data.get('success'):
-                print("✅ Heat sheets generated successfully!"                print(f"   Events: {data.get('event_count', 0)}")
+                print("✅ Heat sheets generated successfully!")
+                print(f"   Events: {data.get('event_count', 0)}")
                 print(f"   Heats: {data.get('total_heats', 0)}")
                 print(f"   Entries: {data.get('total_entries', 0)}")
                 return True

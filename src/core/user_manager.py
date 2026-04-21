@@ -6,6 +6,7 @@ import os
 import uuid
 import hashlib
 import json
+import pickle
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import logging
@@ -60,6 +61,28 @@ class UserManager:
 
         self._store_session(user_id, session_data)
         logger.info(f"Created new user session: {user_id}")
+        return user_id
+
+    def ensure_user_session(self, user_id: str, client_ip: str = None, user_agent: str = None) -> str:
+        """
+        Ensure a session exists for a specific user_id.
+        Useful when clients provide a stable ID via headers/cookies.
+        """
+        session_data = self._load_session(user_id)
+        if session_data:
+            return user_id
+
+        session_data = {
+            'user_id': user_id,
+            'created_at': datetime.now().isoformat(),
+            'last_accessed': datetime.now().isoformat(),
+            'client_ip': client_ip,
+            'user_agent': user_agent,
+            'events': None,
+            'heat_sheets': None
+        }
+        self._store_session(user_id, session_data)
+        logger.info(f"Ensured user session: {user_id}")
         return user_id
 
     def get_user_session(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -191,40 +214,67 @@ class UserManager:
         """Store session data."""
         if self.redis_conn:
             try:
+                # Use pickle for Redis to preserve complex object graphs (Pydantic models)
+                # which are not directly JSON-serializable.
                 self.redis_conn.setex(
                     f"heatwave:session:{user_id}",
                     int(self.session_timeout.total_seconds()),
-                    json.dumps(session_data)
+                    pickle.dumps(session_data)
                 )
             except Exception as e:
                 logger.error(f"Error storing Redis session {user_id}: {e}")
         else:
-            # Local storage
-            session_file = self._local_storage_path / f"{user_id}.json"
+            # In-process storage (primary for no-Redis mode)
+            self._local_sessions[user_id] = session_data
+
+            # Save full pickle snapshot and a best-effort JSON for debugging
+            session_file_json = self._local_storage_path / f"{user_id}.json"
+            session_file_pkl = self._local_storage_path / f"{user_id}.pkl"
+            
             try:
-                with open(session_file, 'w') as f:
-                    json.dump(session_data, f, indent=2)
+                # Store full state in pickle
+                with open(session_file_pkl, 'wb') as f:
+                    pickle.dump(session_data, f)
+                
+                # Store metadata-only in JSON for human inspection
+                snapshot = {k: v for k, v in session_data.items() if k not in ('events', 'heat_sheets')}
+                with open(session_file_json, 'w', encoding='utf-8') as f:
+                    json.dump(snapshot, f, indent=2)
             except Exception as e:
-                logger.error(f"Error storing local session {user_id}: {e}")
+                logger.error(f"Error storing local session snapshot {user_id}: {e}")
 
     def _load_session(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Load session data."""
         if self.redis_conn:
             try:
                 data = self.redis_conn.get(f"heatwave:session:{user_id}")
-                return json.loads(data) if data else None
+                return pickle.loads(data) if data else None
             except Exception as e:
                 logger.error(f"Error loading Redis session {user_id}: {e}")
                 return None
         else:
-            # Local storage
-            session_file = self._local_storage_path / f"{user_id}.json"
+            # In-process storage (preferred)
+            session_data = self._local_sessions.get(user_id)
+            if session_data:
+                return session_data
+
+            # Fallback: full pickle snapshot
+            session_file_pkl = self._local_storage_path / f"{user_id}.pkl"
+            if session_file_pkl.exists():
+                try:
+                    with open(session_file_pkl, 'rb') as f:
+                        return pickle.load(f)
+                except Exception as e:
+                    logger.error(f"Error loading local pickle session {user_id}: {e}")
+
+            # Last resort: JSON metadata (note: does not include events/heat_sheets)
+            session_file_json = self._local_storage_path / f"{user_id}.json"
             try:
-                if session_file.exists():
-                    with open(session_file, 'r') as f:
+                if session_file_json.exists():
+                    with open(session_file_json, 'r', encoding='utf-8') as f:
                         return json.load(f)
             except Exception as e:
-                logger.error(f"Error loading local session {user_id}: {e}")
+                logger.error(f"Error loading local session metadata {user_id}: {e}")
                 return None
 
         return None

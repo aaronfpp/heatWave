@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, make_response
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -91,7 +91,13 @@ def get_or_create_user_id() -> str:
     Returns the user ID string.
     """
     # Try to get from header first (for API clients)
-    user_id = request.headers.get('X-User-ID')
+    user_id = request.headers.get('X-User-ID') or request.headers.get('X-User-Id')
+    client_ip = request.remote_addr
+    user_agent = request.headers.get('User-Agent')
+
+    # If a client provides an ID, ensure a matching session exists and use it.
+    if user_id:
+        return user_manager.ensure_user_session(user_id, client_ip=client_ip, user_agent=user_agent)
 
     # Try to get from cookie
     if not user_id:
@@ -104,8 +110,6 @@ def get_or_create_user_id() -> str:
             return user_id
 
     # Create new user session
-    client_ip = request.remote_addr
-    user_agent = request.headers.get('User-Agent')
     new_user_id = user_manager.create_user_session(client_ip, user_agent)
 
     return new_user_id
@@ -113,6 +117,22 @@ def get_or_create_user_id() -> str:
 def get_user_temp_dir(user_id: str) -> Path:
     """Get the user's temporary directory."""
     return temp_manager.get_user_temp_dir(user_id)
+
+def _attach_user_cookie(resp, user_id: str):
+    """
+    Ensure the browser keeps a stable user_id across requests.
+    We set/refresh the cookie on JSON responses where we also return `user_id`.
+    """
+    existing = request.cookies.get('heatwave_user_id')
+    if user_id and existing != user_id:
+        resp.headers['X-Heatwave-UserId'] = user_id
+        resp.set_cookie(
+            'heatwave_user_id',
+            user_id,
+            httponly=True,
+            samesite='Lax',
+        )
+    return resp
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -125,7 +145,10 @@ def favicon():
 @app.route('/')
 def index():
     """Serve the single-page UI."""
-    return render_template('index.html')
+    resp = make_response(render_template('index.html'))
+    # Avoid stale JS/HTML when iterating quickly (and reduces proxy caching risk).
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 @app.route('/api/upload', methods=['POST'])
@@ -139,7 +162,6 @@ def upload_pdf():
     if pdf_file.filename == '':
         return jsonify({'error': 'Empty filename'}), 400
 
-    # Get or create user ID
     user_id = get_or_create_user_id()
 
     try:
@@ -153,12 +175,13 @@ def upload_pdf():
                 args=(pdf_bytes, pdf_file.filename, user_id)
             )
             if job_id:
-                return jsonify({
+                resp = jsonify({
                     'success': True,
                     'async': True,
                     'job_id': job_id,
                     'user_id': user_id
                 })
+                return _attach_user_cookie(resp, user_id)
             else:
                 return jsonify({'error': 'Too many active jobs or queue unavailable'}), 429
         elif task_queue:
@@ -168,12 +191,13 @@ def upload_pdf():
                 args=(pdf_bytes, pdf_file.filename, user_id),
                 job_timeout='5m'
             )
-            return jsonify({
+            resp = jsonify({
                 'success': True,
                 'async': True,
                 'job_id': job.get_id(),
                 'user_id': user_id
             })
+            return _attach_user_cookie(resp, user_id)
         else:
             # Synchronous fallback (Desktop)
             result = parse_pdf_task(pdf_bytes, pdf_file.filename, user_id)
@@ -186,7 +210,7 @@ def upload_pdf():
                 heat_sheets=None
             )
 
-            return jsonify({
+            resp = jsonify({
                 'success': True,
                 'async': False,
                 'filename': result['filename'],
@@ -195,6 +219,7 @@ def upload_pdf():
                 'events': result['events_summary'],
                 'user_id': user_id
             })
+            return _attach_user_cookie(resp, user_id)
 
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
@@ -204,7 +229,6 @@ def upload_pdf():
 @limiter.limit("5 per minute")
 def generate():
     """Seed events and generate heat sheets."""
-    # Get user ID from request
     user_id = get_or_create_user_id()
     user_session = user_manager.get_user_session(user_id)
 
@@ -223,12 +247,13 @@ def generate():
                 args=(user_session['events'], num_lanes, user_id)
             )
             if job_id:
-                return jsonify({
+                resp = jsonify({
                     'success': True,
                     'async': True,
                     'job_id': job_id,
                     'user_id': user_id
                 })
+                return _attach_user_cookie(resp, user_id)
             else:
                 return jsonify({'error': 'Too many active jobs or queue unavailable'}), 429
         elif task_queue:
@@ -238,12 +263,13 @@ def generate():
                 args=(user_session['events'], num_lanes, user_id),
                 job_timeout='5m'
             )
-            return jsonify({
+            resp = jsonify({
                 'success': True,
                 'async': True,
                 'job_id': job.get_id(),
                 'user_id': user_id
             })
+            return _attach_user_cookie(resp, user_id)
         else:
             # Synchronous fallback
             result = seeding_task(user_session['events'], num_lanes, user_id)
@@ -252,7 +278,7 @@ def generate():
 
             user_manager.update_user_session(user_id, heat_sheets=result['heat_sheets'])
 
-            return jsonify({
+            resp = jsonify({
                 'success': True,
                 'async': False,
                 'total_heats': result['total_heats'],
@@ -260,6 +286,7 @@ def generate():
                 'events': result['summary'],
                 'user_id': user_id
             })
+            return _attach_user_cookie(resp, user_id)
 
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
@@ -347,19 +374,19 @@ def status():
     has_events = user_session and user_session.get('events') is not None
     has_heats = user_session and user_session.get('heat_sheets') is not None
 
-    return jsonify({
+    resp = jsonify({
         'has_events': has_events,
         'has_heats': has_heats,
         'event_count': len(user_session['events']) if has_events else 0,
         'heat_sheet_count': len(user_session['heat_sheets']) if has_heats else 0,
         'user_id': user_id
     })
+    return _attach_user_cookie(resp, user_id)
 
 
 @app.route('/api/jobs/<job_id>', methods=['GET'])
 def job_status(job_id):
     """Check the status of a background job."""
-    # Get user ID from request
     user_id = get_or_create_user_id()
 
     # Try user-specific job first, fallback to global
@@ -377,7 +404,6 @@ def apply_job_result(job_id):
     Take the result of a finished job and apply it to the user's session.
     This is necessary because workers don't share the Flask session.
     """
-    # Get user ID from request
     user_id = get_or_create_user_id()
 
     # Try user-specific job first, fallback to global

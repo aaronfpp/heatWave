@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>heatWave — Heat Sheet Generator</title>
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='icon.ico') }}">
   <style>
     /* ====== RESET & VARIABLES ====== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -363,6 +363,53 @@
 /* ====== STATE ====== */
 let parsedEvents = null;
 let generatedEvents = null;
+let heatwaveUserId = null;
+
+function setUserId(userId) {
+  if (!userId) return;
+  heatwaveUserId = userId;
+  try { localStorage.setItem('heatwave_user_id', userId); } catch (_) {}
+}
+
+function getUserId() {
+  if (heatwaveUserId) return heatwaveUserId;
+  try {
+    const v = localStorage.getItem('heatwave_user_id');
+    if (v) heatwaveUserId = v;
+  } catch (_) {}
+  return heatwaveUserId;
+}
+
+async function apiFetch(url, options = {}) {
+  const opts = { ...options };
+  opts.headers = new Headers(opts.headers || {});
+  const uid = getUserId();
+  if (uid) opts.headers.set('X-User-ID', uid);
+  const res = await fetch(url, opts);
+  // If server returns a user_id, persist it
+  try {
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      const clone = res.clone();
+      const data = await clone.json();
+      if (data && data.user_id) setUserId(data.user_id);
+    }
+  } catch (_) {}
+  return res;
+}
+
+async function readJsonOrText(res) {
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  if (ct.includes('application/json')) {
+    return await res.json();
+  }
+  const text = await res.text();
+  return {
+    error: `HTTP ${res.status} ${res.statusText}: ${text.slice(0, 300)}`,
+    _nonJson: true,
+    _status: res.status,
+  };
+}
 
 /* ====== PANEL NAV ====== */
 function showPanel(name) {
@@ -415,12 +462,12 @@ fileInput.addEventListener('change', e => {
 /* ====== POLLING HELPER ====== */
 async function pollJob(jobId, onProgress) {
   while (true) {
-    const res = await fetch(`/api/jobs/${jobId}`);
-    const data = await res.json();
+    const res = await apiFetch(`/api/jobs/${jobId}`);
+    const data = await readJsonOrText(res);
     
     if (data.status === 'finished') {
       // Apply the result to the session
-      await fetch(`/api/jobs/${jobId}/apply`, { method: 'POST' });
+      await apiFetch(`/api/jobs/${jobId}/apply`, { method: 'POST' });
       return data.result;
     }
     
@@ -449,8 +496,9 @@ async function uploadFile(file) {
   form.append('file', file);
 
   try {
-    const res = await fetch('/api/upload', { method: 'POST', body: form });
-    const data = await res.json();
+    const res = await apiFetch('/api/upload', { method: 'POST', body: form });
+    const data = await readJsonOrText(res);
+    if (data.user_id) setUserId(data.user_id);
 
     if (!res.ok || data.error) {
       status.innerHTML = `<div style="color:var(--error);">❌ ${data.error || 'Upload failed'}</div>`;
@@ -533,12 +581,13 @@ async function doGenerate() {
   const lanes = document.getElementById('numLanes').value;
 
   try {
-    const res = await fetch('/api/generate', {
+    const res = await apiFetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lanes: parseInt(lanes) }),
     });
-    const data = await res.json();
+    const data = await readJsonOrText(res);
+    if (data.user_id) setUserId(data.user_id);
 
     if (!res.ok || data.error) {
       results.innerHTML = `<div style="color:var(--error);">❌ ${data.error}</div>`;
@@ -629,6 +678,15 @@ document.getElementById('tab-generate').addEventListener('click', () => {
     <strong>Entries:</strong> ${entryCount}
   `;
 });
+
+// Init user session (helps keep a stable user_id even if cookies are blocked)
+(async function initSession() {
+  try {
+    const res = await apiFetch('/api/status');
+    const data = await readJsonOrText(res);
+    if (data && data.user_id) setUserId(data.user_id);
+  } catch (_) {}
+})();
 </script>
 
 </body>

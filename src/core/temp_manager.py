@@ -222,3 +222,8 @@ class TempManager:
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
             return {'error': str(e)}
+
+
+# Backwards-compatible module-level singleton used by worker tasks.
+# (Some modules import `temp_manager` directly.)
+temp_manager = TempManager()
