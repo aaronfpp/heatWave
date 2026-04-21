@@ -14,9 +14,9 @@ pydantic
 # PDF Generation
 reportlab
 
-# Desktop UI
+# Desktop UI (removed for headless server)
 flask
-pywebview
+# pywebview
 
 # Web UI (development only — not needed for .exe)
 # streamlit

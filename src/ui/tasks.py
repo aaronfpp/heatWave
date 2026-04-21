@@ -7,15 +7,27 @@ from src.seeding.seeder import seed_event
 from src.core.pdf_generator import generate_full_meet_pdf, generate_heat_sheet_pdf
 from src.models.schemas import Entry, RelayEntry
 
-def parse_pdf_task(pdf_content, filename):
+def parse_pdf_task(pdf_content, filename, user_id=None):
     """
     Task to parse a PDF psych sheet.
     pdf_content: bytes of the PDF file.
+    filename: original filename
+    user_id: user identifier for temp file isolation
     """
+    from src.core.temp_manager import temp_manager
+
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
-            tmp.write(pdf_content)
-            tmp_path = tmp.name
+        # Use user-specific temp directory if user_id provided
+        if user_id:
+            user_temp_dir = temp_manager.get_user_temp_dir(user_id)
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf', dir=user_temp_dir) as tmp:
+                tmp.write(pdf_content)
+                tmp_path = tmp.name
+        else:
+            # Fallback to global temp
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+                tmp.write(pdf_content)
+                tmp_path = tmp.name
 
         text = extract_text_from_pdf(tmp_path)
         events = parse_events_from_text(text)
@@ -66,7 +78,7 @@ def parse_pdf_task(pdf_content, filename):
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-def seeding_task(events, num_lanes):
+def seeding_task(events, num_lanes, user_id=None):
     """Task to seed events and generate heat sheet data."""
     try:
         heat_sheets = []
@@ -99,19 +111,27 @@ def seeding_task(events, num_lanes):
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-def generate_pdf_task(heat_sheets, meet_title, meet_date):
+def generate_pdf_task(heat_sheets, meet_title, meet_date, user_id=None):
     """Task to generate the final PDF."""
+    from src.core.temp_manager import temp_manager
+
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            pdf_path = Path(tmpdir) / 'Heatsheets.pdf'
-            generate_full_meet_pdf(
-                heat_sheets,
-                str(pdf_path),
-                meet_title=meet_title,
-                meet_date=meet_date,
-            )
-            pdf_bytes = pdf_path.read_bytes()
-        
+        if user_id:
+            user_temp_dir = temp_manager.get_user_temp_dir(user_id)
+            pdf_path = user_temp_dir / 'Heatsheets.pdf'
+        else:
+            # Fallback
+            with tempfile.TemporaryDirectory() as tmpdir:
+                pdf_path = Path(tmpdir) / 'Heatsheets.pdf'
+
+        generate_full_meet_pdf(
+            heat_sheets,
+            str(pdf_path),
+            meet_title=meet_title,
+            meet_date=meet_date,
+        )
+        pdf_bytes = pdf_path.read_bytes()
+
         return {
             'success': True,
             'pdf_bytes': pdf_bytes,

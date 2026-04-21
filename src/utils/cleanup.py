@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 def cleanup_old_files(directory: str, max_age_hours: int = 1) -> int:
     """
     Delete files older than max_age_hours from the specified directory.
-    
+
     Args:
         directory: Path to directory to clean
         max_age_hours: Maximum age of files to keep (in hours)
-    
+
     Returns:
         Number of files deleted
     """
@@ -26,15 +26,15 @@ def cleanup_old_files(directory: str, max_age_hours: int = 1) -> int:
         dir_path = Path(directory)
         if not dir_path.exists():
             return 0
-        
+
         deleted_count = 0
         cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
-        
+
         for file_path in dir_path.glob("*.pdf"):
             try:
                 # Get file modification time
                 mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
-                
+
                 # Delete if older than cutoff
                 if mtime < cutoff_time:
                     file_path.unlink()
@@ -42,12 +42,59 @@ def cleanup_old_files(directory: str, max_age_hours: int = 1) -> int:
                     logger.info(f"Deleted old PDF: {file_path.name}")
             except Exception as e:
                 logger.warning(f"Could not delete {file_path}: {e}")
-        
+
         return deleted_count
-    
+
     except Exception as e:
         logger.error(f"Error during cleanup of {directory}: {e}")
         return 0
+
+
+def cleanup_user_temp_files(user_temp_dir: Path, max_age_hours: int = 1) -> int:
+    """
+    Clean up old files in a user's temporary directory.
+    Enhanced version that handles various file types.
+
+    Args:
+        user_temp_dir: User's temporary directory path
+        max_age_hours: Maximum age of files to keep
+
+    Returns:
+        Number of files deleted
+    """
+    if not user_temp_dir.exists():
+        return 0
+
+    deleted_count = 0
+    cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+
+    try:
+        # Clean up PDF files
+        for pdf_file in user_temp_dir.glob("*.pdf"):
+            try:
+                mtime = datetime.fromtimestamp(pdf_file.stat().st_mtime)
+                if mtime < cutoff_time:
+                    pdf_file.unlink()
+                    deleted_count += 1
+                    logger.debug(f"Deleted old PDF: {pdf_file}")
+            except Exception as e:
+                logger.warning(f"Could not delete {pdf_file}: {e}")
+
+        # Clean up temporary files (tmp_* pattern)
+        for temp_file in user_temp_dir.glob("tmp_*"):
+            try:
+                mtime = datetime.fromtimestamp(temp_file.stat().st_mtime)
+                if mtime < cutoff_time:
+                    temp_file.unlink()
+                    deleted_count += 1
+                    logger.debug(f"Deleted old temp file: {temp_file}")
+            except Exception as e:
+                logger.warning(f"Could not delete {temp_file}: {e}")
+
+    except Exception as e:
+        logger.error(f"Error during cleanup of {user_temp_dir}: {e}")
+
+    return deleted_count
 
 
 def clear_directory(directory: str) -> int:
