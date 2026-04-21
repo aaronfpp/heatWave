@@ -1,17 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for heatWave .exe packaging
-Build with: pyinstaller --clean heatWave.spec
+PyInstaller spec file for heatWave desktop app.
 
-This configuration:
-- Bundles heatWave as a standalone Windows .exe
-- Includes all Python dependencies
-- Embeds src/ and data/ directories
-- No external dependencies needed (except Windows)
-- Produces a 150-250 MB executable
+Build:  pyinstaller --clean heatWave.spec
+Output: dist/heatWave/heatWave.exe  (folder mode — fastest startup)
 
-Run after building:
-  dist/heatWave.exe (double-click to launch)
+Architecture:
+  Entry point: run_desktop.py
+    → starts Flask server (background thread)
+    → opens native window via pywebview
+  UI served from: src/ui/templates/index.html
+  Core logic: src/parser, src/seeding, src/core, src/models
 """
 
 import os
@@ -20,38 +19,35 @@ from PyInstaller.building.build_main import Analysis
 
 block_cipher = None
 
-# Analysis phase: Find all modules and dependencies
 a = Analysis(
-    ['run_streamlit.py'],                    # Entry point
-    pathex=[],                               # Add paths if needed
-    binaries=[],                             # Add binary dependencies here
+    ['run_desktop.py'],
+    pathex=[],
+    binaries=[],
     datas=[
-        ('src', 'src'),                      # Include source code
-        ('data', 'data'),                    # Include sample data/output dirs
+        # Application source + templates  (needed at runtime for imports & Flask templates)
+        ('src', 'src'),
+        # Data directories (samples / output stubs)
+        ('data', 'data'),
     ],
-    
-    # All hidden imports needed by heatWave and dependencies
+
     hiddenimports=[
-        # Streamlit and web server
-        'streamlit',
-        'streamlit.components.v1',
-        'streamlit.elements.arrow',
-        'altair',
-        'validators',
-        'gitpython',
-        'pydeck',
-        'watchdog',
-        'pymdown_extensions',
-        
-        # PDF and text processing
+        # Flask & web server
+        'flask',
+        'flask.json',
+        'werkzeug',
+        'werkzeug.serving',
+        'jinja2',
+
+        # Desktop window
+        'webview',
+
+        # PDF extraction
         'pdfplumber',
         'pdfplumber.utils',
-        'PyPDF2',
-        'fitz',  # PyMuPDF
-        'pdf2image',
-        'pytesseract',
-        'PIL',
-        
+        'pdfminer',
+        'pdfminer.high_level',
+        'pymupdf',
+
         # PDF generation
         'reportlab',
         'reportlab.lib',
@@ -61,46 +57,35 @@ a = Analysis(
         'reportlab.lib.units',
         'reportlab.platypus',
         'reportlab.graphics',
-        
+
         # Data validation
         'pydantic',
-        'pydantic.json',
-        
-        # System and utilities
+        'pydantic_core',
+
+        # Stdlib modules that Analysis sometimes misses
         'threading',
         'tempfile',
         'pathlib',
         'logging',
-        'subprocess',
-        'webbrowser',
-        'time',
-        
-        # FastAPI and uvicorn (optional, but included)
-        'fastapi',
-        'uvicorn',
-        'uvicorn.config',
-        'uvicorn.server',
-        'uvicorn.protocols.http.httptools_impl',
-        'uvicorn.protocols.websocket.auto',
-        'starlette',
-        'starlette.routing',
-        'starlette.responses',
-        
-        # Testing (not needed in .exe but safe to include)
-        'pytest',
     ],
-    
+
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'matplotlib',           # Not used, saves space
-        'scipy',                # Not used
-        'sklearn',              # Not used
-        'tcl',                  # Not needed for CLI
-        'tk',                   # Not needed for web app
-        'tkinter',
+        # ---- Not used — saves ~100 MB off the bundle ----
+        'streamlit',
+        'altair',
+        'matplotlib',
+        'scipy',
+        'sklearn',
+        'tcl', 'tk', 'tkinter',
         'IPython',
+        'notebook',
+        'pytest',
+        'fastapi',
+        'uvicorn',
+        'starlette',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -108,41 +93,32 @@ a = Analysis(
     noarchive=False,
 )
 
-# PYZ: Create the archive of pure Python modules
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-# EXE: Build the executable
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    name='heatWave',                          # Output filename (heatWave.exe)
-    debug=False,                              # No debug info in .exe
+    [],                        # binaries go in COLLECT, not in EXE (folder mode)
+    exclude_binaries=True,     # ← key flag for folder mode
+    name='heatWave',
+    debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,                                 # Use UPX to compress (smaller file)
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,                            # Hide console window for clean UX
+    upx=False,
+    console=True,              # Keep console visible for now (set False after verified)
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    
-    # Optional: Add icon if it exists
     icon='icon.ico' if os.path.exists('icon.ico') else None,
 )
 
-# COLLECT: Create distribution folder
 coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='heatWave'                           # Output folder: dist/heatWave/
+    upx=False,
+    name='heatWave',
 )

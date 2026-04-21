@@ -14,12 +14,12 @@ pydantic
 # PDF Generation
 reportlab
 
-# Web UI (MVP)
-streamlit
+# Desktop UI
+flask
+pywebview
 
-# Backend/API (optional, if moving beyond MVP)
-fastapi
-uvicorn
+# Web UI (development only — not needed for .exe)
+# streamlit
 
 # Testing
 pytest

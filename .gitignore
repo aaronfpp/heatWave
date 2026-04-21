@@ -8,3 +8,4 @@ env/
 .pytest_cache/
 data/samples/*
 !data/samples/.gitkeep
+dist/
