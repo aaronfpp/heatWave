@@ -9,3 +9,9 @@ env/
 data/samples/*
 !data/samples/.gitkeep
 dist/
+build/
+*.spec
+*.log
+data/output/*
+!data/output/.gitkeep
+.vscode/

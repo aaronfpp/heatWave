@@ -1,3 +1,3 @@
 @echo off
-python run_streamlit.py
+.venv\Scripts\python.exe run_desktop.py
 pause
