@@ -71,7 +71,7 @@ def main():
         # pywebview not installed — fall back to browser
         import webbrowser
         import time
-        print(f'🏊 heatWave is running at http://{host}:{port}')
+        print(f'heatWave is running at http://{host}:{port}')
         print('   Opening your browser…')
         time.sleep(1)
         webbrowser.open(f'http://{host}:{port}')

@@ -12,7 +12,11 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template, session
+from flask_session import Session
+from dotenv import load_dotenv
+
+load_dotenv()  # Load environment variables from .env
 
 # ---------------------------------------------------------------------------
 # Resolve paths for both dev and frozen (PyInstaller) mode
@@ -29,12 +33,18 @@ app = Flask(__name__, template_folder=str(_TEMPLATE_DIR))
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max upload
 
 # ---------------------------------------------------------------------------
-# In-memory session store (single-user desktop app — no database needed)
+# Configure Flask-Session (multi-user isolation)
 # ---------------------------------------------------------------------------
-_session = {
-    'events': None,       # List[Event] after parsing
-    'heat_sheets': None,  # List[HeatSheet] after seeding
-}
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'heatwave-dev-secret-key-123')
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = tempfile.gettempdir() + '/heatwave_sessions'
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_USE_SIGNER'] = True
+
+# Ensure the session directory exists
+os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+
+Session(app)
 
 
 # ---------------------------------------------------------------------------
@@ -76,8 +86,8 @@ def upload_pdf():
         Path(tmp_path).unlink(missing_ok=True)
 
         # Store parsed events in session
-        _session['events'] = events
-        _session['heat_sheets'] = None  # reset any prior generation
+        session['events'] = events
+        session['heat_sheets'] = None  # reset any prior generation
 
         # Build a JSON-friendly summary
         events_summary = []
@@ -126,7 +136,7 @@ def upload_pdf():
 @app.route('/api/generate', methods=['POST'])
 def generate():
     """Seed events and generate heat sheets."""
-    if _session['events'] is None:
+    if session['events'] is None:
         return jsonify({'error': 'No events parsed yet. Upload a PDF first.'}), 400
 
     data = request.get_json(silent=True) or {}
@@ -134,12 +144,12 @@ def generate():
 
     try:
         heat_sheets = []
-        for event in _session['events']:
+        for event in session['events']:
             if event.entries:
                 hs = seed_event(event, lanes=num_lanes)
                 heat_sheets.append(hs)
 
-        _session['heat_sheets'] = heat_sheets
+        session['heat_sheets'] = heat_sheets
 
         # Summary for the frontend
         summary = []
@@ -174,7 +184,7 @@ def generate():
 @app.route('/api/download/full', methods=['GET'])
 def download_full_pdf():
     """Download the full meet heat-sheet PDF."""
-    if _session['heat_sheets'] is None:
+    if session['heat_sheets'] is None:
         return jsonify({'error': 'No heat sheets generated yet.'}), 400
 
     meet_title = request.args.get('title', 'Swimming Meet')
@@ -184,7 +194,7 @@ def download_full_pdf():
         with tempfile.TemporaryDirectory() as tmpdir:
             pdf_path = Path(tmpdir) / 'Full_Meet_Heatsheets.pdf'
             generate_full_meet_pdf(
-                _session['heat_sheets'],
+                session['heat_sheets'],
                 str(pdf_path),
                 meet_title=meet_title,
                 meet_date=meet_date,
@@ -206,13 +216,13 @@ def download_full_pdf():
 @app.route('/api/download/event/<int:event_num>', methods=['GET'])
 def download_event_pdf(event_num):
     """Download the heat-sheet PDF for a single event."""
-    if _session['heat_sheets'] is None:
+    if session['heat_sheets'] is None:
         return jsonify({'error': 'No heat sheets generated yet.'}), 400
 
     meet_title = request.args.get('title', 'Swimming Meet')
     meet_date = request.args.get('date', datetime.now().strftime('%m/%d/%Y'))
 
-    hs = next((h for h in _session['heat_sheets'] if h.event.number == event_num), None)
+    hs = next((h for h in session['heat_sheets'] if h.event.number == event_num), None)
     if hs is None:
         return jsonify({'error': f'Event {event_num} not found.'}), 404
 
@@ -241,13 +251,13 @@ def download_event_pdf(event_num):
 @app.route('/api/status', methods=['GET'])
 def status():
     """Return current session status for the frontend."""
-    has_events = _session['events'] is not None
-    has_heats = _session['heat_sheets'] is not None
+    has_events = session['events'] is not None
+    has_heats = session['heat_sheets'] is not None
     return jsonify({
         'has_events': has_events,
         'has_heats': has_heats,
-        'event_count': len(_session['events']) if has_events else 0,
-        'heat_sheet_count': len(_session['heat_sheets']) if has_heats else 0,
+        'event_count': len(session['events']) if has_events else 0,
+        'heat_sheet_count': len(session['heat_sheets']) if has_heats else 0,
     })
 
 
