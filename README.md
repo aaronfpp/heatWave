@@ -10,7 +10,18 @@
 
 ## 🚀 Quick Start (For Coaches)
 
-### Installation (One-Time Setup)
+### Option 1: Download heatWave.exe (Easiest for Coaches ⭐)
+
+1. **Download** `heatWave.exe` (~200 MB)
+2. **Double-click** to launch
+3. **Browser opens** automatically
+4. **Use the app** - No Python or installation needed!
+
+**That's it!** The executable includes everything needed. Works on Windows 10/11 with zero setup.
+
+### Option 2: Python Installation (For Developers)
+
+#### Installation (One-Time Setup)
 
 ```bash
 # Clone or download the project
@@ -20,7 +31,7 @@ cd heatWave
 pip install -r requirements.txt
 ```
 
-### Running the App
+#### Running the App
 
 ```bash
 python run_streamlit.py
@@ -28,7 +39,7 @@ python run_streamlit.py
 
 Open your browser to `http://localhost:8501`
 
-### Five-Step Workflow
+### Five-Step Workflow (Both Methods)
 
 1. **Upload** your psych sheet PDF (drag & drop)
 2. **Preview** parsed events to verify accuracy
@@ -359,14 +370,48 @@ python run_streamlit.py
 ```
 Open `http://localhost:8501` in browser
 
-### Docker (Optional)
-Coming soon: Dockerfile for containerized deployment
+### Building heatWave.exe (For Distribution) ⭐
 
-### Packaging (Optional)
+The easiest way to distribute heatWave to coaches is as a standalone Windows executable.
+
+**Prerequisites:**
+- Python 3.10+ installed
+- All dependencies from `requirements.txt`
+- PyInstaller: `pip install pyinstaller`
+
+**Build Steps:**
+
 ```bash
-pyinstaller --onefile run_streamlit.py
+# Option 1: Use the PowerShell build script (easiest)
+.\build.ps1
+
+# Option 2: Manual build with PyInstaller
+pyinstaller --clean heatWave.spec
+
+# The result: dist/heatWave/heatWave.exe (~200 MB)
 ```
-Creates standalone `.exe` for Windows (future)
+
+**Test the .exe:**
+```bash
+# Option 1: Test with PowerShell script
+.\test-exe.ps1
+
+# Option 2: Manual test
+cd dist\heatWave
+.\heatWave.exe
+```
+
+**Distribute to Coaches:**
+1. Zip the entire `dist/heatWave/` folder
+2. Share via email, Google Drive, Dropbox, or website
+3. Coaches download and extract
+4. Double-click `heatWave.exe` to launch
+5. Browser opens automatically - they're ready to use!
+
+**For detailed build instructions, see:** [BUILD_GUIDE.md](BUILD_GUIDE.md)
+
+### Docker (Optional)
+For cloud deployment or Linux servers, you can use Docker (future enhancement).
 
 ---
 

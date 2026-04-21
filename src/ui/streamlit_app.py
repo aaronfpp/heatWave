@@ -1,6 +1,7 @@
 """
 HeatWave Streamlit UI - Psych Sheet to Heat Sheet Converter
 Provides drag-and-drop PDF upload, live preview, and PDF generation.
+Zero-persistent-storage design: All PDFs generated in temporary folders and auto-deleted.
 """
 import io
 import tempfile
@@ -11,6 +12,7 @@ from datetime import datetime
 from src.parser.extractor import extract_text_from_pdf, parse_events_from_text
 from src.seeding.seeder import seed_event, format_heat_sheet
 from src.core.pdf_generator import generate_full_meet_pdf, generate_heat_sheet_pdf
+from src.utils.cleanup import start_cleanup_daemon, clear_directory, cleanup_old_files
 
 
 # ============================================================================
@@ -84,6 +86,14 @@ def initialize_session_state():
         st.session_state.heat_sheets = None
     if 'pdf_content' not in st.session_state:
         st.session_state.pdf_content = None
+    if 'cleanup_daemon' not in st.session_state:
+        # Start background cleanup daemon for data/output directory
+        # Cleans files older than 1 hour every 5 minutes
+        st.session_state.cleanup_daemon = start_cleanup_daemon(
+            "data/output",
+            check_interval_minutes=5,
+            max_age_hours=1
+        )
 
 
 def process_pdf(pdf_file):
@@ -183,6 +193,33 @@ def main():
     # Header
     st.markdown('<div class="main-header">🏊 heatWave</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Psych Sheet to Heat Sheet Converter</div>', unsafe_allow_html=True)
+    
+    # ========================================================================
+    # SIDEBAR: ADMIN & CLEANUP
+    # ========================================================================
+    with st.sidebar:
+        st.markdown("### ⚙️ Admin")
+        
+        if st.button("🗑️ Clear All Generated Files", use_container_width=True, type="secondary"):
+            cleared = clear_directory("data/output")
+            st.success(f"✅ Cleared {cleared} PDF file(s) from data/output/")
+        
+        st.caption("""
+        **Auto-cleanup enabled:**
+        - Files older than 1 hour are automatically deleted
+        - Check runs every 5 minutes
+        - Use button above for manual cleanup
+        """)
+        
+        st.divider()
+        
+        st.markdown("### 🔒 Security")
+        st.info("""
+        **Zero-Persistent-Storage Design:**
+        - Temp folders auto-delete after each generation
+        - PDFs loaded into memory for download only
+        - No user data stored server-side
+        """)
     
     # Main content
     tab1, tab2, tab3, tab4 = st.tabs(["📤 Upload", "👀 Preview", "⚙️ Settings", "📊 Generate"])
