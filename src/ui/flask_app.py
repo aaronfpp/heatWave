@@ -19,7 +19,12 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
 
+import logging
 load_dotenv()  # Load environment variables from .env
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+app_logger = logging.getLogger('heatwave')
 
 # Queue and tasks
 from src.ui.queue_manager import task_queue, get_job_status, redis_conn

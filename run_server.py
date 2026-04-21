@@ -27,9 +27,10 @@ def main():
     print(f"Starting heatWave production server on http://{host}:{port}")
     print(f"Threads: {threads}")
     
-    # Suppress verbose logging if not in debug mode
-    if os.environ.get('FLASK_DEBUG') != '1':
-        logging.getLogger('waitress').setLevel(logging.INFO)
+    # Enable debug logging to troubleshoot 500 errors
+    logging.getLogger('waitress').setLevel(logging.DEBUG)
+    logging.getLogger('flask').setLevel(logging.DEBUG)
+    app.logger.setLevel(logging.DEBUG)
     
     try:
         serve(app, host=host, port=port, threads=threads)
