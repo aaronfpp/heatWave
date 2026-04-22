@@ -68,10 +68,11 @@ class UserManager:
         Ensure a session exists for a specific user_id.
         Useful when clients provide a stable ID via headers/cookies.
         """
-        session_data = self._load_session(user_id)
+        session_data = self.get_user_session(user_id)
         if session_data:
             return user_id
 
+        # Create new if not found or expired
         session_data = {
             'user_id': user_id,
             'created_at': datetime.now().isoformat(),
@@ -82,7 +83,7 @@ class UserManager:
             'heat_sheets': None
         }
         self._store_session(user_id, session_data)
-        logger.info(f"Ensured user session: {user_id}")
+        logger.info(f"Initialized fresh user session: {user_id}")
         return user_id
 
     def get_user_session(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -99,9 +100,10 @@ class UserManager:
         if not session_data:
             return None
 
-        # Check if session expired
-        created_at = datetime.fromisoformat(session_data['created_at'])
-        if datetime.now() - created_at > self.session_timeout:
+        # Check if session expired (sliding window based on last_accessed)
+        last_accessed = datetime.fromisoformat(session_data.get('last_accessed', session_data['created_at']))
+        if datetime.now() - last_accessed > self.session_timeout:
+            logger.info(f"Session expired: {user_id}")
             self.delete_user_session(user_id)
             return None
 
@@ -153,12 +155,20 @@ class UserManager:
                 return False
         else:
             # Local storage
-            session_file = self._local_storage_path / f"{user_id}.json"
+            session_file_json = self._local_storage_path / f"{user_id}.json"
+            session_file_pkl = self._local_storage_path / f"{user_id}.pkl"
             try:
-                if session_file.exists():
-                    session_file.unlink()
-                    logger.info(f"Deleted local session: {user_id}")
-                    return True
+                if session_file_json.exists():
+                    session_file_json.unlink()
+                if session_file_pkl.exists():
+                    session_file_pkl.unlink()
+                
+                # Also remove from memory
+                if user_id in self._local_sessions:
+                    del self._local_sessions[user_id]
+                    
+                logger.info(f"Deleted local session: {user_id}")
+                return True
             except Exception as e:
                 logger.error(f"Error deleting local session {user_id}: {e}")
                 return False
@@ -182,8 +192,8 @@ class UserManager:
                     user_id = key.decode().split(":")[-1]
                     session_data = self._load_session(user_id)
                     if session_data:
-                        created_at = datetime.fromisoformat(session_data['created_at'])
-                        if datetime.now() - created_at > self.session_timeout:
+                        last_accessed = datetime.fromisoformat(session_data.get('last_accessed', session_data['created_at']))
+                        if datetime.now() - last_accessed > self.session_timeout:
                             self.redis_conn.delete(key)
                             cleaned += 1
             except Exception as e:
@@ -191,17 +201,19 @@ class UserManager:
         else:
             # Local cleanup
             try:
-                for session_file in self._local_storage_path.glob("*.json"):
+                # Clean up both .json and .pkl
+                for session_file in self._local_storage_path.glob("*"):
+                    if session_file.suffix not in ('.json', '.pkl'):
+                        continue
+                        
                     try:
-                        with open(session_file, 'r') as f:
-                            session_data = json.load(f)
-
-                        created_at = datetime.fromisoformat(session_data['created_at'])
-                        if datetime.now() - created_at > self.session_timeout:
+                        # Use file modification time as a proxy for last activity
+                        mtime = datetime.fromtimestamp(session_file.stat().st_mtime)
+                        if datetime.now() - mtime > self.session_timeout:
                             session_file.unlink()
                             cleaned += 1
                     except Exception as e:
-                        logger.warning(f"Error processing session file {session_file}: {e}")
+                        logger.warning(f"Error cleaning session file {session_file}: {e}")
             except Exception as e:
                 logger.error(f"Error cleaning local sessions: {e}")
 
@@ -240,11 +252,8 @@ class UserManager:
                 snapshot = {k: v for k, v in session_data.items() if k not in ('events', 'heat_sheets')}
                 with open(session_file_json, 'w', encoding='utf-8') as f:
                     json.dump(snapshot, f, indent=2)
-                
-                print(f"[DEBUG] Stored session {user_id}: events={'Found' if session_data.get('events') else 'None'}")
             except Exception as e:
                 logger.error(f"Error storing local session snapshot {user_id}: {e}")
-                print(f"[DEBUG] FAILED to store session {user_id}: {e}")
 
     def _load_session(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Load session data."""
@@ -266,9 +275,7 @@ class UserManager:
             if session_file_pkl.exists():
                 try:
                     with open(session_file_pkl, 'rb') as f:
-                        data = pickle.load(f)
-                        print(f"[DEBUG] Loaded session from DISK {user_id}: events={'Found' if data.get('events') else 'None'}")
-                        return data
+                        return pickle.load(f)
                 except Exception as e:
                     logger.error(f"Error loading local pickle session {user_id}: {e}")
 

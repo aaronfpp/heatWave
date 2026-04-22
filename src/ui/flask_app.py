@@ -23,6 +23,8 @@ load_dotenv()  # Load environment variables from .env
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
+logging.getLogger('pdfminer').setLevel(logging.WARNING)
 app_logger = logging.getLogger('heatwave')
 
 # Queue and tasks
@@ -163,7 +165,6 @@ def upload_pdf():
         return jsonify({'error': 'Empty filename'}), 400
 
     user_id = get_or_create_user_id()
-    print(f"[DEBUG] POST /api/upload - User: {user_id}")
 
     try:
         pdf_bytes = pdf_file.read()
@@ -232,7 +233,6 @@ def generate():
     """Seed events and generate heat sheets."""
     user_id = get_or_create_user_id()
     user_session = user_manager.get_user_session(user_id)
-    print(f"[DEBUG] POST /api/generate - User: {user_id}, Session exists: {user_session is not None}, Has events: {user_session.get('events') is not None if user_session else False}")
 
     if not user_session or user_session.get('events') is None:
         return jsonify({'error': 'No events parsed yet. Upload a PDF first.'}), 400
@@ -381,8 +381,7 @@ def status():
         'has_heats': has_heats,
         'event_count': len(user_session['events']) if has_events else 0,
         'heat_sheet_count': len(user_session['heat_sheets']) if has_heats else 0,
-        'user_id': user_id,
-        'server_pid': os.getpid()
+        'user_id': user_id
     })
     return _attach_user_cookie(resp, user_id)
 
