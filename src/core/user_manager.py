@@ -240,8 +240,11 @@ class UserManager:
                 snapshot = {k: v for k, v in session_data.items() if k not in ('events', 'heat_sheets')}
                 with open(session_file_json, 'w', encoding='utf-8') as f:
                     json.dump(snapshot, f, indent=2)
+                
+                print(f"[DEBUG] Stored session {user_id}: events={'Found' if session_data.get('events') else 'None'}")
             except Exception as e:
                 logger.error(f"Error storing local session snapshot {user_id}: {e}")
+                print(f"[DEBUG] FAILED to store session {user_id}: {e}")
 
     def _load_session(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Load session data."""
@@ -263,7 +266,9 @@ class UserManager:
             if session_file_pkl.exists():
                 try:
                     with open(session_file_pkl, 'rb') as f:
-                        return pickle.load(f)
+                        data = pickle.load(f)
+                        print(f"[DEBUG] Loaded session from DISK {user_id}: events={'Found' if data.get('events') else 'None'}")
+                        return data
                 except Exception as e:
                     logger.error(f"Error loading local pickle session {user_id}: {e}")
 
