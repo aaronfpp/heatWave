@@ -3,7 +3,7 @@ from typing import List, Optional
 
 class Swimmer(BaseModel):
     name: str
-    age: Optional[int] = None
+    age: Optional[str] = None
     team_code: str
 
 class Entry(BaseModel):
