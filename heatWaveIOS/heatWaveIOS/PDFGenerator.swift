@@ -3,33 +3,6 @@
 //
 // Renders a complete heat sheet (array of HeatSheet objects from SeedingEngine)
 // into a formatted PDF file on-device, saved to the user's document directory.
-//
-// DESIGN NOTES:
-//
-//  • Uses UIGraphicsPDFRenderer (UIKit) — the simplest iOS API for multi-page
-//    PDF generation. Does NOT require PDFKit at generation time.
-//
-//  • Output path: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
-//    The generated file is named with a timestamp so repeated runs don't overwrite:
-//    "HeatSheet_<ISO8601timestamp>.pdf"
-//
-//  • Page layout mirrors the Python output format from seeder.py format_heat_sheet():
-//      Header:   "Event <N>: <Gender> <Distance>Y <Stroke>"
-//      Sub:      "Total Heats: <N> | Total Entries: <N>"
-//      Per heat: "Heat <N>:" with ruled separator
-//      Per lane: "Lane <N>: <Name> (Age <age>) <team> - <time>"
-//                "Lane <N>: <TeamName> - <time>"  (relay)
-//
-//  • Page size: US Letter (612 × 792 pts) to match the Python PDF output.
-//
-//  • Typography: System font. No custom fonts needed for MVP.
-//    Use UIFont.systemFont(ofSize:) and UIFont.boldSystemFont(ofSize:).
-//
-//  • A new page is started when the remaining vertical space on the current
-//    page is insufficient for the next heat block.
-//
-//  Python reference: src/seeding/seeder.py  format_heat_sheet()
-//  Minimum iOS: 16.0
 
 import UIKit
 import Foundation
@@ -45,7 +18,7 @@ enum PDFGeneratorError: LocalizedError {
         case .noHeatSheets:
             return "No heat sheets to generate."
         case .fileWriteFailed(let path):
-            return "Failed to write the PDF to: \(path)"
+            return "Failed to write the PDF to: \\(path)"
         }
     }
 }
@@ -67,61 +40,169 @@ struct PDFGenerator {
 
     /// Renders `heatSheets` into a PDF and saves it to `.documentDirectory`.
     ///
-    /// - Parameter heatSheets: Ordered array of `HeatSheet` from SeedingEngine.
+    /// - Parameters:
+    ///   - heatSheets: Ordered array of `HeatSheet` from SeedingEngine.
+    ///   - filename: The name of the output PDF file.
+    ///   - meetTitle: Title of the meet to display at the top.
+    ///   - meetDate: Date of the meet to display below the title.
     /// - Returns: The URL of the saved PDF file.
     /// - Throws: `PDFGeneratorError` if no heat sheets are provided or writing fails.
-    func generate(heatSheets: [HeatSheet]) throws -> URL {
-        // TODO Phase 4: implement using UIGraphicsPDFRenderer
-        //
-        // Implementation sketch:
-        //   1. guard !heatSheets.isEmpty else { throw .noHeatSheets }
-        //   2. let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: pageSize))
-        //   3. let data = renderer.pdfData { context in
-        //        context.beginPage()
-        //        var cursor: CGFloat = margin
-        //        for sheet in heatSheets {
-        //            drawEventHeader(sheet, context: context, cursor: &cursor)
-        //            for assignment grouped by heat {
-        //                if cursor + estimatedHeatHeight > pageSize.height - margin {
-        //                    context.beginPage(); cursor = margin
-        //                }
-        //                drawHeat(assignments, context: context, cursor: &cursor)
-        //            }
-        //        }
-        //   }
-        //   4. let url = outputURL()
-        //   5. try data.write(to: url)
-        //   6. return url
-        fatalError("PDFGenerator.generate(heatSheets:) not yet implemented — Phase 4")
+    func generateHeatSheet(_ heatSheets: [HeatSheet], to filename: String, meetTitle: String, meetDate: String) throws -> URL {
+        guard !heatSheets.isEmpty else { throw PDFGeneratorError.noHeatSheets }
+        
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: pageSize))
+        let data = renderer.pdfData { context in
+            context.beginPage()
+            var cursor: CGFloat = margin
+            
+            // Draw meet title
+            let titleFont = UIFont.boldSystemFont(ofSize: 18)
+            let titleAttrs: [NSAttributedString.Key: Any] = [.font: titleFont]
+            let titleStr = NSAttributedString(string: meetTitle, attributes: titleAttrs)
+            titleStr.draw(at: CGPoint(x: margin, y: cursor))
+            cursor += 24
+            
+            // Draw meet date
+            if !meetDate.isEmpty {
+                let dateStr = NSAttributedString(string: meetDate, attributes: [.font: UIFont.systemFont(ofSize: 12)])
+                dateStr.draw(at: CGPoint(x: margin, y: cursor))
+                cursor += 20
+            }
+            cursor += 10
+            
+            for sheet in heatSheets {
+                // Estimate header height + at least one heat. If not enough, new page.
+                if cursor + 100 > pageSize.height - margin {
+                    context.beginPage()
+                    cursor = margin
+                }
+                
+                drawEventHeader(sheet, context: context, cursor: &cursor)
+                
+                // Group assignments by heat
+                let heatDict = Dictionary(grouping: sheet.assignments, by: { $0.heat })
+                let sortedHeats = heatDict.keys.sorted()
+                
+                for heatNum in sortedHeats {
+                    if let assignments = heatDict[heatNum] {
+                        // 30pts for heat header + 16pts per row
+                        let estimatedHeatHeight: CGFloat = 30 + CGFloat(assignments.count * 16)
+                        if cursor + estimatedHeatHeight > pageSize.height - margin {
+                            context.beginPage()
+                            cursor = margin
+                        }
+                        drawHeat(assignments, heatNumber: heatNum, context: context, cursor: &cursor)
+                    }
+                }
+                cursor += 20 // Extra space between events
+            }
+        }
+        
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = docs.appendingPathComponent(filename)
+        
+        do {
+            try data.write(to: url)
+        } catch {
+            throw PDFGeneratorError.fileWriteFailed(path: url.path)
+        }
+        
+        return url
     }
 
-    // MARK: - Internal Helpers (stubbed; implement in Phase 4)
+    // MARK: - Internal Helpers
 
     /// Draws the event header block onto the current PDF page.
-    /// Mirrors format_heat_sheet() lines 166-168 in seeder.py.
     private func drawEventHeader(_ sheet: HeatSheet,
                                  context: UIGraphicsPDFRendererContext,
                                  cursor: inout CGFloat) {
-        // TODO Phase 4
-        fatalError("drawEventHeader not yet implemented — Phase 4")
+        let font = UIFont.boldSystemFont(ofSize: 14)
+        let headerText = "Event \\(sheet.event.number): \\(sheet.event.gender.rawValue) \\(sheet.event.distance)Y \\(sheet.event.stroke)"
+        let subText = "Total Heats: \\(sheet.heats) | Total Entries: \\(sheet.assignments.count)"
+        
+        let headerAttr = NSAttributedString(string: headerText, attributes: [.font: font])
+        headerAttr.draw(at: CGPoint(x: margin, y: cursor))
+        cursor += 18
+        
+        let subAttr = NSAttributedString(string: subText, attributes: [.font: UIFont.systemFont(ofSize: 12)])
+        subAttr.draw(at: CGPoint(x: margin, y: cursor))
+        cursor += 20
     }
 
-    /// Draws one heat's lane assignments onto the current PDF page.
-    /// Mirrors format_heat_sheet() lines 172-185 in seeder.py.
+    /// Draws one heat's lane assignments onto the current PDF page in a table format.
     private func drawHeat(_ assignments: [LaneAssignment],
                           heatNumber: Int,
                           context: UIGraphicsPDFRendererContext,
                           cursor: inout CGFloat) {
-        // TODO Phase 4
-        fatalError("drawHeat not yet implemented — Phase 4")
+        let titleFont = UIFont.boldSystemFont(ofSize: 12)
+        let font = UIFont.systemFont(ofSize: 12)
+        
+        let heatTitle = NSAttributedString(string: "Heat \\(heatNumber):", attributes: [.font: titleFont])
+        heatTitle.draw(at: CGPoint(x: margin, y: cursor))
+        cursor += 16
+        
+        // Draw table headers
+        let headers = ["Lane", "Name", "Team", "Seed Time"]
+        let xOffsets: [CGFloat] = [margin, margin + 40, margin + 250, margin + 400]
+        
+        for (i, text) in headers.enumerated() {
+            let attr = NSAttributedString(string: text, attributes: [.font: titleFont])
+            attr.draw(at: CGPoint(x: xOffsets[i], y: cursor))
+        }
+        cursor += 16
+        
+        // Draw ruled line
+        context.cgContext.move(to: CGPoint(x: margin, y: cursor))
+        context.cgContext.addLine(to: CGPoint(x: pageSize.width - margin, y: cursor))
+        context.cgContext.setStrokeColor(UIColor.black.cgColor)
+        context.cgContext.setLineWidth(0.5)
+        context.cgContext.strokePath()
+        cursor += 4
+        
+        // Draw assignments rows
+        for assignment in assignments {
+            let laneStr = "\\(assignment.lane)"
+            var nameStr = ""
+            var teamStr = ""
+            var timeStr = ""
+            
+            switch assignment.entry {
+            case .individual(let ind):
+                nameStr = ind.swimmer.name
+                if let age = ind.swimmer.age {
+                    nameStr += " (Age \\(age))"
+                }
+                teamStr = ind.swimmer.teamCode
+                timeStr = formatTime(ind.seedTime)
+            case .relay(let rel):
+                nameStr = rel.teamName
+                timeStr = formatTime(rel.seedTime)
+            }
+            
+            let rowAttrs: [NSAttributedString.Key: Any] = [.font: font]
+            
+            NSAttributedString(string: laneStr, attributes: rowAttrs).draw(at: CGPoint(x: xOffsets[0], y: cursor))
+            NSAttributedString(string: nameStr, attributes: rowAttrs).draw(at: CGPoint(x: xOffsets[1], y: cursor))
+            NSAttributedString(string: teamStr, attributes: rowAttrs).draw(at: CGPoint(x: xOffsets[2], y: cursor))
+            NSAttributedString(string: timeStr, attributes: rowAttrs).draw(at: CGPoint(x: xOffsets[3], y: cursor))
+            
+            cursor += 16
+        }
+        cursor += 10
     }
-
-    /// Returns a timestamped output URL in the app's document directory.
-    /// Example: "HeatSheet_2026-05-01T21-00-00.pdf"
-    private func outputURL() -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let formatter = ISO8601DateFormatter()
-        let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        return docs.appendingPathComponent("HeatSheet_\(stamp).pdf")
+    
+    /// Formats a time interval into a string, treating .infinity as "NT".
+    func formatTime(_ time: TimeInterval) -> String {
+        if time == .infinity {
+            return "NT"
+        }
+        let mins = Int(time) / 60
+        let secs = time.truncatingRemainder(dividingBy: 60)
+        
+        if mins > 0 {
+            return String(format: "%d:%05.2f", mins, secs)
+        } else {
+            return String(format: "%.2f", secs)
+        }
     }
 }

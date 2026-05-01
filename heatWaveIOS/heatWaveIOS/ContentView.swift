@@ -1,57 +1,42 @@
 // ContentView.swift
 // heatWaveIOS
 //
-// Root view. Owns the top-level ProcessingState and wires the
-// DocumentPicker → (future) processing pipeline → result display.
+// Minimum Deployment Target: iOS 16.0
 //
-// Phase 1: UI shell only. No processing logic is connected yet.
-// Phase 2+ will bind PDFExtractor / SeedingEngine / PDFGenerator here.
+// Compilation Checklist (Ensure all these files are in the same flat heatWaveIOS directory in Xcode):
+// - App.swift
+// - ContentView.swift
+// - DocumentPicker.swift
+// - Models.swift
+// - PDFExtractor.swift
+// - PDFGenerator.swift
+// - RegexParser.swift
+// - SeedingEngine.swift
+// - ShareSheet.swift
+//
+// Root view driving the UI state and wiring the processing pipeline.
 
 import SwiftUI
 import PDFKit
 
 // MARK: - ProcessingState
 
-/// Represents every state the processing pipeline can be in.
-/// Used to drive conditional UI rendering throughout the app.
 enum ProcessingState: Equatable {
-    /// No file selected; app is at rest.
     case idle
-
-    /// User has picked a file; waiting to start.
-    case fileSelected(url: URL)
-
-    /// PDF text extraction is running.
-    case extracting
-
-    /// Seeding engine is computing heat/lane assignments.
-    case seeding
-
-    /// PDF generation is running.
-    case generating
-
-    /// Pipeline succeeded. `outputURL` points to the file in .documentDirectory.
-    case success(outputURL: URL)
-
-    /// A recoverable error occurred. `message` is shown in an Alert.
-    case error(message: String)
-
-    // Equatable conformance for URL-associated cases
+    case loading(String)
+    case preview([Event])
+    case done(url: URL, entryCount: Int, heatCount: Int)
+    case error(String)
+    
     static func == (lhs: ProcessingState, rhs: ProcessingState) -> Bool {
         switch (lhs, rhs) {
-        case (.idle, .idle),
-             (.extracting, .extracting),
-             (.seeding, .seeding),
-             (.generating, .generating):
-            return true
-        case (.fileSelected(let a), .fileSelected(let b)):
-            return a == b
-        case (.success(let a), .success(let b)):
-            return a == b
-        case (.error(let a), .error(let b)):
-            return a == b
-        default:
-            return false
+        case (.idle, .idle): return true
+        case (.loading(let a), .loading(let b)): return a == b
+        case (.preview(let a), .preview(let b)): return a == b
+        case (.done(let u1, let c1, let h1), .done(let u2, let c2, let h2)):
+            return u1 == u2 && c1 == c2 && h1 == h2
+        case (.error(let a), .error(let b)): return a == b
+        default: return false
         }
     }
 }
@@ -59,92 +44,78 @@ enum ProcessingState: Equatable {
 // MARK: - ContentView
 
 struct ContentView: View {
-
-    // The single source of truth for what stage the pipeline is in.
     @State private var state: ProcessingState = .idle
-
-    // Controls whether the document picker sheet is presented.
     @State private var isPickerPresented: Bool = false
-
-    // Controls whether the error alert is showing.
-    @State private var isErrorAlertPresented: Bool = false
-
+    @State private var isSharePresented: Bool = false
+    
+    // Meet settings with sensible defaults
+    @State private var meetTitle: String = "Meet"
+    @State private var meetDate: String = ""
+    @State private var lanes: Int = 8
+    
+    // Services
+    let extractor = PDFExtractor()
+    let parser = RegexParser()
+    let engine = SeedingEngine()
+    let generator = PDFGenerator()
+    
     var body: some View {
         NavigationStack {
-            VStack(spacing: 32) {
-
-                Spacer()
-
-                // App logo / title area
-                VStack(spacing: 8) {
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 72))
-                        .foregroundStyle(.orange)
-
-                    Text("heatWave")
-                        .font(.largeTitle.bold())
-
-                    Text("Psych Sheet → Heat Sheet")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            VStack {
+                if case .preview = state {
+                    // Custom header for preview state to maximize space
+                } else {
+                    Spacer()
+                    // App logo / title area
+                    VStack(spacing: 8) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 72))
+                            .foregroundStyle(.orange)
+                        Text("heatWave")
+                            .font(.largeTitle.bold())
+                        Text("Psych Sheet → Heat Sheet")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
                 }
 
-                Spacer()
-
-                // Central action area — changes based on state
                 Group {
                     switch state {
-
                     case .idle:
                         idleView
-
-                    case .fileSelected(let url):
-                        fileSelectedView(url: url)
-
-                    case .extracting:
-                        progressView(label: "Reading PDF…")
-
-                    case .seeding:
-                        progressView(label: "Seeding heats…")
-
-                    case .generating:
-                        progressView(label: "Generating heat sheet…")
-
-                    case .success(let outputURL):
-                        successView(outputURL: outputURL)
-
-                    case .error:
-                        // Error is shown via Alert; fall back to idle-style UI
-                        idleView
+                    case .loading(let msg):
+                        progressView(label: msg)
+                    case .preview(let events):
+                        previewView(events: events)
+                    case .done(let url, let entries, let heats):
+                        successView(outputURL: url, entryCount: entries, heatCount: heats)
+                    case .error(let msg):
+                        errorView(message: msg)
                     }
                 }
-
-                Spacer()
+                
+                if case .preview = state {} else { Spacer() }
             }
             .padding()
-            .navigationTitle("")
+            .navigationTitle(casePreviewTitle)
             .navigationBarTitleDisplayMode(.inline)
-            // Document picker sheet
             .sheet(isPresented: $isPickerPresented) {
                 DocumentPicker(allowedTypes: ["com.adobe.pdf"]) { url in
-                    state = .fileSelected(url: url)
+                    processPDF(at: url)
                 }
             }
-            // Error alert
-            .alert("Processing Error", isPresented: $isErrorAlertPresented) {
-                Button("OK") { state = .idle }
-            } message: {
-                if case .error(let msg) = state {
-                    Text(msg)
-                }
-            }
-            // Surface the alert when state transitions to .error
-            .onChange(of: state) { _, newState in
-                if case .error = newState {
-                    isErrorAlertPresented = true
+            .sheet(isPresented: $isSharePresented) {
+                if case .done(let url, _, _) = state {
+                    ShareSheet(items: [url])
                 }
             }
         }
+    }
+    
+    var casePreviewTitle: String {
+        if case .preview = state { return "Configure Meet" }
+        return ""
     }
 
     // MARK: - Sub-views
@@ -153,44 +124,13 @@ struct ContentView: View {
         Button {
             isPickerPresented = true
         } label: {
-            Label("Import Psych Sheet PDF", systemImage: "doc.badge.plus")
+            Label("Import Psych Sheet", systemImage: "doc.badge.plus")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
                 .background(Color.accentColor)
                 .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
-        }
-    }
-
-    private func fileSelectedView(url: URL) -> some View {
-        VStack(spacing: 16) {
-            Label(url.lastPathComponent, systemImage: "doc.fill")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            Button {
-                // Phase 3 will replace this comment with:
-                //   Task { await processFile(at: url) }
-                // which calls PDFExtractor → RegexParser → SeedingEngine → PDFGenerator
-            } label: {
-                Label("Generate Heat Sheet", systemImage: "bolt.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.orange)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-            }
-
-            Button("Choose a Different File") {
-                state = .idle
-                isPickerPresented = true
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
         }
     }
 
@@ -204,7 +144,49 @@ struct ContentView: View {
         }
     }
 
-    private func successView(outputURL: URL) -> some View {
+    private func previewView(events: [Event]) -> some View {
+        VStack(spacing: 20) {
+            Form {
+                Section("Meet Settings") {
+                    TextField("Meet Title", text: $meetTitle)
+                    TextField("Meet Date (Optional)", text: $meetDate)
+                    Stepper("Lanes: \\(lanes)", value: $lanes, in: 4...10)
+                }
+                
+                Section("Parsed Events (\\(events.count))") {
+                    List(events, id: \.number) { event in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Event \\(event.number): \\(event.name)")
+                                    .font(.subheadline.bold())
+                                Text("\\(event.gender.rawValue) \\(event.distance)Y \\(event.stroke)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\\(event.entries.count) entries")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            
+            Button {
+                generateHeatSheet(events: events)
+            } label: {
+                Label("Generate Heat Sheet", systemImage: "bolt.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.orange)
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
+    }
+
+    private func successView(outputURL: URL, entryCount: Int, heatCount: Int) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 56))
@@ -212,9 +194,15 @@ struct ContentView: View {
 
             Text("Heat Sheet Ready")
                 .font(.title2.bold())
+                
+            Text("\\(heatCount) Heats | \\(entryCount) Total Entries")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
-            ShareLink(item: outputURL) {
-                Label("Share / Save PDF", systemImage: "square.and.arrow.up")
+            Button {
+                isSharePresented = true
+            } label: {
+                Label("Share PDF", systemImage: "square.and.arrow.up")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -230,10 +218,94 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
         }
     }
-}
+    
+    private func errorView(message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 56))
+                .foregroundStyle(.red)
+                
+            Text("Processing Error")
+                .font(.title2.bold())
+                
+            Text(message)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                
+            Button("Try Again") {
+                state = .idle
+            }
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.accentColor)
+            .foregroundStyle(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+    }
 
-// MARK: - Preview
+    // MARK: - Pipeline
 
-#Preview {
-    ContentView()
+    private func processPDF(at url: URL) {
+        state = .loading("Extracting text…")
+        
+        Task(priority: .userInitiated) {
+            do {
+                let text = try extractor.extractText(from: url)
+                
+                await MainActor.run { state = .loading("Parsing events…") }
+                let events = try parser.parseEvents(from: text)
+                
+                await MainActor.run {
+                    state = .preview(events)
+                }
+            } catch let error as PDFExtractionError {
+                let msg: String
+                switch error {
+                case .scannedPDF:
+                    msg = "This PDF appears to be image-based. Scanned PDFs are not supported yet."
+                case .emptyDocument:
+                    msg = "The PDF appears to be empty or corrupted."
+                default:
+                    msg = "Something went wrong: \\(error.localizedDescription)"
+                }
+                await MainActor.run { state = .error(msg) }
+            } catch {
+                await MainActor.run { state = .error("Something went wrong: \\(error.localizedDescription)") }
+            }
+        }
+    }
+    
+    private func generateHeatSheet(events: [Event]) {
+        state = .loading("Seeding heats…")
+        
+        Task(priority: .userInitiated) {
+            do {
+                let heatSheets = try engine.seedAllEvents(events, lanes: lanes)
+                
+                await MainActor.run { state = .loading("Generating PDF…") }
+                
+                let filename = "HeatSheet_\\(meetTitle.replacingOccurrences(of: " ", with: "_")).pdf"
+                let url = try generator.generateHeatSheet(heatSheets, to: filename, meetTitle: meetTitle, meetDate: meetDate)
+                
+                let totalEntries = heatSheets.reduce(0) { $0 + $1.assignments.count }
+                let totalHeats = heatSheets.reduce(0) { $0 + $1.heats }
+                
+                await MainActor.run {
+                    state = .done(url: url, entryCount: totalEntries, heatCount: totalHeats)
+                }
+            } catch let error as SeedingError {
+                let msg: String
+                if case .invalidLaneCount = error {
+                    msg = "Invalid lane count. Please enter a value between 4 and 10."
+                } else {
+                    msg = "Something went wrong: \\(error.localizedDescription)"
+                }
+                await MainActor.run { state = .error(msg) }
+            } catch {
+                await MainActor.run { state = .error("Something went wrong: \\(error.localizedDescription)") }
+            }
+        }
+    }
 }
