@@ -172,8 +172,9 @@ struct ContentView: View {
                 .truncationMode(.middle)
 
             Button {
-                // TODO Phase 3: kick off the processing pipeline here
-                // await processFile(at: url)
+                // Phase 3 will replace this comment with:
+                //   Task { await processFile(at: url) }
+                // which calls PDFExtractor → RegexParser → SeedingEngine → PDFGenerator
             } label: {
                 Label("Generate Heat Sheet", systemImage: "bolt.fill")
                     .font(.headline)

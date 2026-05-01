@@ -2,8 +2,6 @@
 // heatWaveIOSTests
 //
 // XCTest coverage for RegexParser.
-// Test cases are derived directly from the Python unit test corpus and
-// the example strings documented in extractor.py.
 
 import XCTest
 @testable import heatWaveIOS
@@ -21,98 +19,172 @@ final class RegexParserTests: XCTestCase {
 
     func testStandardEventHeader() throws {
         // "Event 1 Girls 10 & Under 200 Yard Freestyle"
-        // → number: 1, gender: "Girls", distance: 200, stroke: "Freestyle"
-        XCTFail("testStandardEventHeader not yet implemented — Phase 3")
+        let result = parser.parseEventHeader(line: "Event 1 Girls 10 & Under 200 Yard Freestyle")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.number, 1)
+        XCTAssertEqual(result?.gender, .female)
+        XCTAssertEqual(result?.distance, 200)
+        XCTAssertEqual(result?.stroke, "Freestyle")
+        XCTAssertEqual(result?.name, "10 & Under 200 Freestyle")
     }
 
     func testEventHeaderWithColonSuffix() throws {
-        // "Event 1: Girls 10 & Under 200 Yard Freestyle"
-        // Should parse identically to the colon-free form.
-        XCTFail("testEventHeaderWithColonSuffix not yet implemented — Phase 3")
+        // "Event 2: Boys 10 & Under 200 Yard Freestyle"
+        let result = parser.parseEventHeader(line: "Event 2: Boys 10 & Under 200 Yard Freestyle")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.number, 2)
+        XCTAssertEqual(result?.gender, .male)
     }
 
     func testContinuationEventHeader() throws {
         // "Event 5 ...(Girls 10 & Under 200 Yard Freestyle)"
-        // Should produce the same ParsedEvent as the original header.
-        XCTFail("testContinuationEventHeader not yet implemented — Phase 3")
+        let result = parser.parseEventHeader(line: "Event 5 ...(Girls 10 & Under 200 Yard Freestyle)")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.number, 5)
+        XCTAssertEqual(result?.gender, .female)
+        XCTAssertEqual(result?.distance, 200)
+        XCTAssertEqual(result?.stroke, "Freestyle")
+        XCTAssertEqual(result?.name, "10 & Under 200 Freestyle")
     }
 
     func testCollegiateEventHeader() throws {
         // "Event 12 Women 200 Yard Backstroke"
-        // gender: "Women", no age group
-        XCTFail("testCollegiateEventHeader not yet implemented — Phase 3")
+        let result = parser.parseEventHeader(line: "Event 12 Women 200 Yard Backstroke")
+        XCTAssertNotNil(result)
+        // Per USA Swimming rules and our constraints, even = male, ignoring "Women"
+        XCTAssertEqual(result?.gender, .male)
+        XCTAssertEqual(result?.distance, 200)
+        XCTAssertEqual(result?.stroke, "Backstroke")
+        XCTAssertEqual(result?.name, "200 Backstroke")
     }
 
     func testNonHeaderLineReturnsNil() throws {
         // "1 Smith, John 14 Tulsa Swim-OK 2:41.23" → parseEventHeader → nil
         let result = parser.parseEventHeader(line: "1 Smith, John 14 Tulsa Swim-OK 2:41.23")
         XCTAssertNil(result, "Non-header line should not parse as an event header")
-        // NOTE: This test exercises the nil-return path. Remove XCTFail once implemented.
-        XCTFail("Unimplemented — Phase 3")
     }
 
     // MARK: - Individual Entry Parsing
 
     func testStandardIndividualEntry() throws {
         // "1 Meek, Keaston 10 Bartlesville Spl-OK 2:42.05"
-        // → place: 1, name: "Meek, Keaston", age: "10", team: "Bartlesville Spl-OK", time: "2:42.05"
-        XCTFail("testStandardIndividualEntry not yet implemented — Phase 3")
+        let result = parser.parseIndividualEntry(line: "1 Meek, Keaston 10 Bartlesville Spl-OK 2:42.05")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.place, 1)
+        XCTAssertEqual(result?.swimmer.name, "Meek, Keaston")
+        XCTAssertEqual(result?.swimmer.age, "10")
+        XCTAssertEqual(result?.swimmer.teamCode, "Bartlesville Spl-OK")
+        XCTAssertEqual(result?.seedTime, 162.05) // 2*60 + 42.05
     }
 
     func testCollegiateEntryWithYearCode() throws {
         // "1 Cox, Jillian SO Texas QS 15:32.75"
-        // → age: "SO", std code "QS" excluded from team, time: "15:32.75"
-        XCTFail("testCollegiateEntryWithYearCode not yet implemented — Phase 3")
+        let result = parser.parseIndividualEntry(line: "1 Cox, Jillian SO Texas QS 15:32.75")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.swimmer.age, "SO")
+        XCTAssertEqual(result?.swimmer.teamCode, "Texas")
+        XCTAssertEqual(result?.seedTime, 932.75) // 15*60 + 32.75
     }
 
     func testEntryWithNT() throws {
         // "8 Jones, Bob 12 Tulsa Swim-OK NT"
-        // → seedTime: "NT"
-        XCTFail("testEntryWithNT not yet implemented — Phase 3")
+        let result = parser.parseIndividualEntry(line: "8 Jones, Bob 12 Tulsa Swim-OK NT")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.seedTime, TimeInterval.infinity)
     }
 
     func testEntryWithStandardCode() throws {
         // "2 Smith, Anna 15 Club Team A 1:05.44"
-        // A standard code "A" should not be included in the team code
-        XCTFail("testEntryWithStandardCode not yet implemented — Phase 3")
+        let result = parser.parseIndividualEntry(line: "2 Smith, Anna 15 Club Team A 1:05.44")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.swimmer.teamCode, "Club Team")
+        XCTAssertEqual(result?.seedTime, 65.44)
     }
 
     // MARK: - Relay Entry Parsing
 
     func testStandardRelayEntry() throws {
         // "1 King Marlin Swim-OK A 2:13.43"
-        // → place: 1, teamName: "King Marlin Swim-OK A", time: "2:13.43"
-        XCTFail("testStandardRelayEntry not yet implemented — Phase 3")
+        let result = parser.parseRelayEntry(line: "1 King Marlin Swim-OK A 2:13.43")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.place, 1)
+        XCTAssertEqual(result?.teamName, "King Marlin Swim-OK A")
+        XCTAssertEqual(result?.seedTime, 133.43)
     }
 
     func testRelayEntryWithNT() throws {
         // "3 Tulsa Aquatics NT"
-        XCTFail("testRelayEntryWithNT not yet implemented — Phase 3")
+        let result = parser.parseRelayEntry(line: "3 Tulsa Aquatics NT")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.teamName, "Tulsa Aquatics")
+        XCTAssertEqual(result?.seedTime, TimeInterval.infinity)
     }
 
     // MARK: - Seed Time Normalisation
 
     func testNTNormalisesCorrectly() throws {
-        XCTFail("testNTNormalisesCorrectly not yet implemented — Phase 3")
+        XCTAssertEqual(parser.parseSeedTime("NT"), TimeInterval.infinity)
     }
 
     func testPartialTimeGetsDecimalAppended() throws {
-        // "2:41" → "2:41.00"
-        XCTFail("testPartialTimeGetsDecimalAppended not yet implemented — Phase 3")
+        XCTAssertEqual(parser.parseSeedTime("2:41"), 161.0)
+    }
+    
+    func testSecondsTimeGetsParsed() throws {
+        XCTAssertEqual(parser.parseSeedTime("28.50"), 28.50)
     }
 
     // MARK: - Skip Line Detection
 
     func testSkipLinesAreIgnored() throws {
-        // Lines containing "Name Age Team", "HY-TEK", etc. should return true
-        XCTFail("testSkipLinesAreIgnored not yet implemented — Phase 3")
+        XCTAssertTrue(parser.isSkipLine("Name Age Team"))
+        XCTAssertTrue(parser.isSkipLine("HY-TEK"))
+        XCTAssertFalse(parser.isSkipLine("1 Meek, Keaston 10 Bartlesville Spl-OK 2:42.05"))
     }
 
     // MARK: - Full Text Parse Integration
 
     func testParsesMultipleEventsInOrder() throws {
-        // Given a multi-event psych sheet text string,
-        // parse() should return events in document order with correct entry counts.
-        XCTFail("testParsesMultipleEventsInOrder not yet implemented — Phase 3")
+        let text = """
+        Event 1 Girls 10 & Under 200 Yard Freestyle
+        Name Age Team Seed Time
+        1 Meek, Keaston 10 Bartlesville Spl-OK 2:42.05
+        2 Smith, Anna 10 Club Team 2:45.00
+        
+        Event 2 Boys 10 & Under 200 Yard Freestyle
+        Name Age Team Seed Time
+        1 Jones, Bob 10 Tulsa Swim-OK NT
+        
+        Event 3 Girls 11-12 200 Yard Freestyle Relay
+        Team Relay Seed
+        1 King Marlin Swim-OK A 2:13.43
+        """
+        
+        let events = try parser.parseEvents(from: text)
+        XCTAssertEqual(events.count, 3)
+        
+        let event1 = events[0]
+        XCTAssertEqual(event1.number, 1)
+        XCTAssertFalse(event1.isRelay)
+        XCTAssertEqual(event1.entries.count, 2)
+        if case .individual(let e1) = event1.entries[0] {
+            XCTAssertEqual(e1.swimmer.name, "Meek, Keaston")
+        } else { XCTFail() }
+        
+        let event2 = events[1]
+        XCTAssertEqual(event2.number, 2)
+        XCTAssertEqual(event2.entries.count, 1)
+        if case .individual(let e2) = event2.entries[0] {
+            XCTAssertEqual(e2.seedTime, TimeInterval.infinity)
+        } else { XCTFail() }
+        
+        let event3 = events[2]
+        XCTAssertEqual(event3.number, 3)
+        XCTAssertTrue(event3.isRelay)
+        XCTAssertEqual(event3.entries.count, 1)
+        if case .relay(let r1) = event3.entries[0] {
+            XCTAssertEqual(r1.teamName, "King Marlin Swim-OK A")
+            XCTAssertEqual(r1.seedTime, 133.43)
+        } else { XCTFail() }
     }
 }

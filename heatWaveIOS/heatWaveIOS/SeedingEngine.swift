@@ -3,111 +3,126 @@
 //
 // Applies USA Swimming preliminary seeding rules to a list of parsed events,
 // producing heat and lane assignments for the PDF generator.
-//
-// PORTING NOTES — read before implementing:
-//
-//  Source of truth: src/seeding/seeder.py
-//
-//  Core rules (from Python source):
-//
-//    1. SORT entries by seed time — slowest to fastest.
-//       NT (no time) sorts LAST (after all timed entries).
-//
-//    2. CALCULATE heats: ceil(entryCount / laneCount)
-//
-//    3. FILL heats from slowest to fastest.
-//       If entry count is not evenly divisible by lane count, the FIRST heat
-//       is a partial heat (the "incomplete" heat). Other heats are full.
-//
-//    4. ASSIGN lanes CENTER-OUT within each heat.
-//       The fastest swimmer in the heat gets the center lane.
-//       Alternate left-right outward from center.
-//
-//       For 8 lanes: [4, 5, 3, 6, 2, 7, 1, 8]
-//       For 6 lanes: [3, 4, 2, 5, 1, 6]
-//
-//    5. SORT final assignments by (heat, lane) for output.
-//
-//  Python reference: src/seeding/seeder.py  seed_event(), get_center_out_lanes()
-//  Minimum iOS: 16.0
 
 import Foundation
 
-// MARK: - Output Models
-
-struct LaneAssignment {
-    let entry: EventEntry
-    let heat: Int
-    let lane: Int
+enum SeedingError: LocalizedError {
+    case invalidLaneCount(Int)
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidLaneCount(let count):
+            return "Invalid lane count: \(count). Must be between 4 and 10."
+        }
+    }
 }
-
-struct HeatSheet {
-    let event: ParsedEvent
-    let lanes: Int
-    let heats: Int
-    let assignments: [LaneAssignment]   // sorted by (heat, lane)
-}
-
-// MARK: - SeedingEngine
 
 /// Converts parsed events into lane-assigned heat sheets using USA Swimming rules.
 struct SeedingEngine {
-
-    // MARK: - Configuration
-
-    /// Default lane count. Can be overridden (e.g. 6-lane pool).
-    var defaultLaneCount: Int = 8
 
     // MARK: - Public API
 
     /// Seeds a single event and returns a complete HeatSheet.
     ///
     /// - Parameters:
-    ///   - event: A `ParsedEvent` with all entries populated.
+    ///   - event: An `Event` with all entries populated.
     ///   - lanes: Number of lanes in the pool (default: 8).
     /// - Returns: A `HeatSheet` with heat/lane assignments sorted by (heat, lane).
-    func seed(event: ParsedEvent, lanes: Int? = nil) -> HeatSheet {
-        // TODO Phase 4: port seed_event() from seeder.py
-        //
-        // Implementation sketch:
-        //   1. let laneCount = lanes ?? defaultLaneCount
-        //   2. let sorted = sortByTime(event.entries)
-        //   3. let numHeats = Int(ceil(Double(sorted.count) / Double(laneCount)))
-        //   4. let pattern = centerOutPattern(lanes: laneCount)
-        //   5. loop heats, slice entries, reverse, assign lanes via pattern
-        //   6. sort assignments by (heat, lane)
-        //   7. return HeatSheet(...)
-        fatalError("SeedingEngine.seed(event:lanes:) not yet implemented — Phase 4")
+    /// - Throws: `SeedingError` if lane count is invalid.
+    func seedEvent(_ event: Event, lanes: Int = 8) throws -> HeatSheet {
+        guard lanes >= 4 && lanes <= 10 else {
+            throw SeedingError.invalidLaneCount(lanes)
+        }
+        
+        if event.entries.isEmpty {
+            return HeatSheet(event: event, lanes: lanes, heats: 0, assignments: [])
+        }
+        
+        // Slowest to fastest
+        let sortedEntries = sortByTime(event.entries)
+        
+        let numHeats = Int(ceil(Double(sortedEntries.count) / Double(lanes)))
+        let lanePattern = centerOutPattern(lanes: lanes)
+        
+        var assignments: [LaneAssignment] = []
+        var remainder = sortedEntries.count % lanes
+        if remainder == 0 {
+            remainder = lanes
+        }
+        
+        for heatNum in 1...numHeats {
+            let startIdx: Int
+            let endIdx: Int
+            
+            if remainder > 0 && heatNum == 1 {
+                // First heat: partial (with empty lanes)
+                startIdx = 0
+                endIdx = remainder
+            } else {
+                // Other heats: full
+                if remainder > 0 && sortedEntries.count % lanes != 0 {
+                    startIdx = remainder + (heatNum - 2) * lanes
+                } else {
+                    startIdx = (heatNum - 1) * lanes
+                }
+                endIdx = startIdx + lanes
+            }
+            
+            let heatSlice = sortedEntries[startIdx..<endIdx]
+            
+            // Reverse to put fastest first in heat for center-out placement
+            let heatEntries = Array(heatSlice.reversed())
+            
+            for (position, entry) in heatEntries.enumerated() {
+                let lane = lanePattern[position]
+                assignments.append(LaneAssignment(entry: entry, heat: heatNum, lane: lane))
+            }
+        }
+        
+        // Sort assignments by heat then lane for output
+        assignments.sort {
+            if $0.heat != $1.heat { return $0.heat < $1.heat }
+            return $0.lane < $1.lane
+        }
+        
+        return HeatSheet(
+            event: event,
+            lanes: lanes,
+            heats: numHeats,
+            assignments: assignments
+        )
     }
 
     /// Seeds all events in a psych sheet in document order.
     ///
     /// - Parameters:
-    ///   - events: Array of `ParsedEvent` objects from RegexParser.
+    ///   - events: Array of `Event` objects from RegexParser.
     ///   - lanes: Number of lanes (applied to all events).
     /// - Returns: Array of `HeatSheet` objects in event order.
-    func seedAll(events: [ParsedEvent], lanes: Int? = nil) -> [HeatSheet] {
-        // TODO Phase 4: map seed(event:lanes:) over events
-        fatalError("SeedingEngine.seedAll(events:lanes:) not yet implemented — Phase 4")
+    func seedAllEvents(_ events: [Event], lanes: Int = 8) throws -> [HeatSheet] {
+        return try events.map { try seedEvent($0, lanes: lanes) }
     }
 
-    // MARK: - Internal Helpers (stubbed; implement in Phase 4)
+    // MARK: - Internal Helpers
 
-    /// Converts a seed time string to seconds for sorting.
-    /// NT → Double.infinity (sorts last, after all timed entries).
-    ///
-    /// - Parameter timeString: "MM:SS.XX" or "NT"
-    func timeToSeconds(_ timeString: String) -> Double {
-        // TODO Phase 4: port time_to_seconds() from seeder.py
-        fatalError("timeToSeconds not yet implemented — Phase 4")
-    }
-
-    /// Returns entries sorted slowest-first (NT at the very end).
+    /// Returns entries sorted slowest-first (NT at the very beginning).
     ///
     /// - Parameter entries: Unsorted event entries.
     func sortByTime(_ entries: [EventEntry]) -> [EventEntry] {
-        // TODO Phase 4: sort by timeToSeconds, reverse=true for slowest-first
-        fatalError("sortByTime not yet implemented — Phase 4")
+        return entries.sorted {
+            let time1 = seedTime(for: $0)
+            let time2 = seedTime(for: $1)
+            // Sort descending: slower (larger time) first.
+            // TimeInterval.infinity (NT) will naturally be placed at the start.
+            return time1 > time2
+        }
+    }
+    
+    private func seedTime(for entry: EventEntry) -> TimeInterval {
+        switch entry {
+        case .individual(let ind): return ind.seedTime
+        case .relay(let rel): return rel.seedTime
+        }
     }
 
     /// Generates the center-out lane assignment pattern for a given lane count.
@@ -118,7 +133,22 @@ struct SeedingEngine {
     /// - Parameter lanes: Number of lanes in the pool.
     /// - Returns: Lane numbers in center-out placement order (position 0 = fastest in heat).
     func centerOutPattern(lanes: Int) -> [Int] {
-        // TODO Phase 4: port get_center_out_lanes() from seeder.py
-        fatalError("centerOutPattern not yet implemented — Phase 4")
+        if lanes <= 0 { return [] }
+        var result: [Int] = []
+        var left = lanes / 2
+        var right = left + 1
+        
+        for _ in 0..<lanes {
+            if left >= 1 && result.count < lanes {
+                result.append(left)
+                left -= 1
+            }
+            if right <= lanes && result.count < lanes {
+                result.append(right)
+                right += 1
+            }
+        }
+        
+        return Array(result.prefix(lanes))
     }
 }
