@@ -150,21 +150,21 @@ struct ContentView: View {
                 Section("Meet Settings") {
                     TextField("Meet Title", text: $meetTitle)
                     TextField("Meet Date (Optional)", text: $meetDate)
-                    Stepper("Lanes: \\(lanes)", value: $lanes, in: 4...10)
+                    Stepper("Lanes: \(lanes)", value: $lanes, in: 4...10)
                 }
                 
-                Section("Parsed Events (\\(events.count))") {
+                Section("Parsed Events (\(events.count))") {
                     List(events, id: \.number) { event in
                         HStack {
                             VStack(alignment: .leading) {
-                                Text("Event \\(event.number): \\(event.name)")
+                                Text("Event \(event.number): \(event.name)")
                                     .font(.subheadline.bold())
-                                Text("\\(event.gender.rawValue) \\(event.distance)Y \\(event.stroke)")
+                                Text("\(event.gender.rawValue) \(event.distance)Y \(event.stroke)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text("\\(event.entries.count) entries")
+                            Text("\(event.entries.count) entries")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -195,7 +195,7 @@ struct ContentView: View {
             Text("Heat Sheet Ready")
                 .font(.title2.bold())
                 
-            Text("\\(heatCount) Heats | \\(entryCount) Total Entries")
+            Text("\(heatCount) Heats | \(entryCount) Total Entries")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -268,11 +268,11 @@ struct ContentView: View {
                 case .emptyDocument:
                     msg = "The PDF appears to be empty or corrupted."
                 default:
-                    msg = "Something went wrong: \\(error.localizedDescription)"
+                    msg = "Something went wrong: \(error.localizedDescription)"
                 }
                 await MainActor.run { state = .error(msg) }
             } catch {
-                await MainActor.run { state = .error("Something went wrong: \\(error.localizedDescription)") }
+                await MainActor.run { state = .error("Something went wrong: \(error.localizedDescription)") }
             }
         }
     }
@@ -286,7 +286,7 @@ struct ContentView: View {
                 
                 await MainActor.run { state = .loading("Generating PDF…") }
                 
-                let filename = "HeatSheet_\\(meetTitle.replacingOccurrences(of: " ", with: "_")).pdf"
+                let filename = "HeatSheet_\(meetTitle.replacingOccurrences(of: " ", with: "_")).pdf"
                 let url = try generator.generateHeatSheet(heatSheets, to: filename, meetTitle: meetTitle, meetDate: meetDate)
                 
                 let totalEntries = heatSheets.reduce(0) { $0 + $1.assignments.count }
@@ -300,11 +300,11 @@ struct ContentView: View {
                 if case .invalidLaneCount = error {
                     msg = "Invalid lane count. Please enter a value between 4 and 10."
                 } else {
-                    msg = "Something went wrong: \\(error.localizedDescription)"
+                    msg = "Something went wrong: \(error.localizedDescription)"
                 }
                 await MainActor.run { state = .error(msg) }
             } catch {
-                await MainActor.run { state = .error("Something went wrong: \\(error.localizedDescription)") }
+                await MainActor.run { state = .error("Something went wrong: \(error.localizedDescription)") }
             }
         }
     }

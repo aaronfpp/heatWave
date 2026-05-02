@@ -74,12 +74,12 @@ final class PDFGeneratorTests: XCTestCase {
     func testGeneratorHandlesMultipleEventsAndHeatsWithoutCrashing() throws {
         var sheets: [HeatSheet] = []
         for i in 1...5 {
-            let event = Event(number: i, name: "Event \\(i)", distance: 100, stroke: "Fly", entries: [], isRelay: false)
+            let event = Event(number: i, name: "Event \(i)", distance: 100, stroke: "Fly", entries: [], isRelay: false)
             var assignments: [LaneAssignment] = []
             for j in 1...20 {
                 let heat = (j / 8) + 1
                 let lane = (j % 8) + 1
-                let entry = EventEntry.individual(IndividualEntry(place: j, swimmer: Swimmer(name: "Swimmer \\(j)", age: "12", teamCode: "TEAM"), seedTime: Double(j * 10)))
+                let entry = EventEntry.individual(IndividualEntry(place: j, swimmer: Swimmer(name: "Swimmer \(j)", age: "12", teamCode: "TEAM"), seedTime: Double(j * 10)))
                 assignments.append(LaneAssignment(entry: entry, heat: heat, lane: lane))
             }
             sheets.append(HeatSheet(event: event, lanes: 8, heats: 3, assignments: assignments))

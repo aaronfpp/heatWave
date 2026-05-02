@@ -80,7 +80,7 @@ final class SeedingEngineTests: XCTestCase {
         // 17 entries -> ceil(17/8) = 3 heats
         var entries: [EventEntry] = []
         for i in 1...17 {
-            entries.append(.individual(IndividualEntry(place: i, swimmer: Swimmer(name: "S\\(i)", age: nil, teamCode: "T"), seedTime: Double(i))))
+            entries.append(.individual(IndividualEntry(place: i, swimmer: Swimmer(name: "S\(i)", age: nil, teamCode: "T"), seedTime: Double(i))))
         }
         let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false)
         let sheet = try engine.seedEvent(event, lanes: 8)
@@ -92,7 +92,7 @@ final class SeedingEngineTests: XCTestCase {
         var entries: [EventEntry] = []
         for i in 1...10 {
             // Give them times 10.0 down to 1.0
-            entries.append(.individual(IndividualEntry(place: i, swimmer: Swimmer(name: "S\\(i)", age: nil, teamCode: "T"), seedTime: Double(20 - i))))
+            entries.append(.individual(IndividualEntry(place: i, swimmer: Swimmer(name: "S\(i)", age: nil, teamCode: "T"), seedTime: Double(20 - i))))
         }
         let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false)
         let sheet = try engine.seedEvent(event, lanes: 8)
@@ -109,7 +109,7 @@ final class SeedingEngineTests: XCTestCase {
         var entries: [EventEntry] = []
         entries.append(.individual(IndividualEntry(place: 1, swimmer: Swimmer(name: "NT Guy", age: nil, teamCode: "T"), seedTime: .infinity)))
         for i in 1...8 {
-            entries.append(.individual(IndividualEntry(place: i+1, swimmer: Swimmer(name: "S\\(i)", age: nil, teamCode: "T"), seedTime: Double(10 - i))))
+            entries.append(.individual(IndividualEntry(place: i+1, swimmer: Swimmer(name: "S\(i)", age: nil, teamCode: "T"), seedTime: Double(10 - i))))
         }
         
         let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false)

@@ -190,8 +190,8 @@ struct PDFExtractor {
 
         // `string(for:)` returns nil when there are no glyphs in the rect —
         // use "" as the fallback so we never produce optional noise downstream.
-        let leftText  = page.string(for: leftRect)  ?? ""
-        let rightText = page.string(for: rightRect) ?? ""
+        let leftText  = page.selection(for: leftRect)?.string ?? ""
+        let rightText = page.selection(for: rightRect)?.string ?? ""
 
         // Preserve the Python merge order: left column first, then right
         return leftText + "\n" + rightText

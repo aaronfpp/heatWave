@@ -18,7 +18,7 @@ enum PDFGeneratorError: LocalizedError {
         case .noHeatSheets:
             return "No heat sheets to generate."
         case .fileWriteFailed(let path):
-            return "Failed to write the PDF to: \\(path)"
+            return "Failed to write the PDF to: \(path)"
         }
     }
 }
@@ -117,8 +117,8 @@ struct PDFGenerator {
                                  context: UIGraphicsPDFRendererContext,
                                  cursor: inout CGFloat) {
         let font = UIFont.boldSystemFont(ofSize: 14)
-        let headerText = "Event \\(sheet.event.number): \\(sheet.event.gender.rawValue) \\(sheet.event.distance)Y \\(sheet.event.stroke)"
-        let subText = "Total Heats: \\(sheet.heats) | Total Entries: \\(sheet.assignments.count)"
+        let headerText = "Event \(sheet.event.number): \(sheet.event.gender.rawValue) \(sheet.event.distance)Y \(sheet.event.stroke)"
+        let subText = "Total Heats: \(sheet.heats) | Total Entries: \(sheet.assignments.count)"
         
         let headerAttr = NSAttributedString(string: headerText, attributes: [.font: font])
         headerAttr.draw(at: CGPoint(x: margin, y: cursor))
@@ -137,7 +137,7 @@ struct PDFGenerator {
         let titleFont = UIFont.boldSystemFont(ofSize: 12)
         let font = UIFont.systemFont(ofSize: 12)
         
-        let heatTitle = NSAttributedString(string: "Heat \\(heatNumber):", attributes: [.font: titleFont])
+        let heatTitle = NSAttributedString(string: "Heat \(heatNumber):", attributes: [.font: titleFont])
         heatTitle.draw(at: CGPoint(x: margin, y: cursor))
         cursor += 16
         
@@ -161,7 +161,7 @@ struct PDFGenerator {
         
         // Draw assignments rows
         for assignment in assignments {
-            let laneStr = "\\(assignment.lane)"
+            let laneStr = "\(assignment.lane)"
             var nameStr = ""
             var teamStr = ""
             var timeStr = ""
@@ -170,7 +170,7 @@ struct PDFGenerator {
             case .individual(let ind):
                 nameStr = ind.swimmer.name
                 if let age = ind.swimmer.age {
-                    nameStr += " (Age \\(age))"
+                    nameStr += " (Age \(age))"
                 }
                 teamStr = ind.swimmer.teamCode
                 timeStr = formatTime(ind.seedTime)
