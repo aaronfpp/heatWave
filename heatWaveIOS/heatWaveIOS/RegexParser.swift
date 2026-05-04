@@ -70,11 +70,9 @@ struct RegexParser {
     func parseEventHeader(line: String) -> Event? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         
-        // Handle continuation: "Event 5 ...(Girls 10 & Under 200 Yard Freestyle)"
-        if let match = trimmed.firstMatch(of: #/^Event\s+(\d+)\s+\.\.\.\((.+)\)$/#) {
-            let eventNum = String(match.1)
-            let innerContent = String(match.2)
-            return parseEventHeader(line: "Event \(eventNum) \(innerContent)")
+        // Skip continuation headers completely
+        if trimmed.hasPrefix("Event ") && trimmed.contains("...") {
+            return nil
         }
         
         let parts = trimmed.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
@@ -166,7 +164,7 @@ struct RegexParser {
         
         let seedTimeStr = parts.last!
         let seedTimePattern = #/^\d+/#
-        guard seedTimeStr.uppercased() == "NT" || seedTimeStr.firstMatch(of: seedTimePattern) != nil else { return nil }
+        guard seedTimeStr.uppercased().hasPrefix("NT") || seedTimeStr.firstMatch(of: seedTimePattern) != nil else { return nil }
         
         let seedTime = parseSeedTime(seedTimeStr)
         
@@ -211,7 +209,7 @@ struct RegexParser {
         let seedTimeStr = parts.last!
         let timeRegex = #/^\d+:\d{2}/#
         let secRegex = #/^\d{1,2}\.\d{2}/#
-        guard seedTimeStr.uppercased() == "NT" || 
+        guard seedTimeStr.uppercased().hasPrefix("NT") || 
               seedTimeStr.firstMatch(of: timeRegex) != nil || 
               seedTimeStr.firstMatch(of: secRegex) != nil else { return nil }
         
@@ -223,8 +221,14 @@ struct RegexParser {
 
     /// Normalises a seed time string to TimeInterval.
     func parseSeedTime(_ raw: String) -> TimeInterval {
-        let trimmed = raw.trimmingCharacters(in: .whitespaces).uppercased()
-        if trimmed == "NT" {
+        var trimmed = raw.trimmingCharacters(in: .whitespaces).uppercased()
+        
+        // Remove trailing course indicators (Y, L, S) or standard flags (e.g. B for bonus)
+        if trimmed.hasSuffix("Y") || trimmed.hasSuffix("L") || trimmed.hasSuffix("S") || trimmed.hasSuffix("B") {
+            trimmed.removeLast()
+        }
+        
+        if trimmed.hasPrefix("NT") {
             return TimeInterval.infinity
         }
         
@@ -257,7 +261,17 @@ struct RegexParser {
 
     /// Returns `true` if the line is a known column header that should be ignored.
     func isSkipLine(_ line: String) -> Bool {
-        let skips = ["Name Age Team", "Team Relay Seed", "Seed Time", "HY-TEK", "Elig. Year", "Std Seed"]
+        let skips = [
+            "Name Age Team Seed Time", 
+            "Name Age Team", 
+            "Team Relay Seed Time", 
+            "Team Relay Seed", 
+            "Seed Time", 
+            "HY-TEK", 
+            "Elig. Year", 
+            "Std Seed",
+            "King Marlin Swim Club"
+        ]
         return skips.contains(where: { line.contains($0) })
     }
 }
