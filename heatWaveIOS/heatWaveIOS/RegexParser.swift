@@ -70,12 +70,7 @@ struct RegexParser {
     func parseEventHeader(line: String) -> Event? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         
-        // Skip continuation headers completely
-        if trimmed.hasPrefix("Event ") && trimmed.contains("...") {
-            return nil
-        }
-        
-        let parts = trimmed.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        let parts = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         guard parts.count >= 3, parts[0].uppercased() == "EVENT" else { return nil }
         
         let eventNumStr = parts[1].trimmingCharacters(in: CharacterSet(charactersIn: ":"))
@@ -158,12 +153,12 @@ struct RegexParser {
 
     /// Parses a single individual swimmer entry line.
     func parseIndividualEntry(line: String) -> IndividualEntry? {
-        let parts = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        let parts = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         guard parts.count >= 4 else { return nil }
         guard let place = Int(parts[0]) else { return nil }
         
         let seedTimeStr = parts.last!
-        let seedTimePattern = #/^\d+/#
+        let seedTimePattern = #/^[Xx]?\d+/#
         guard seedTimeStr.uppercased().hasPrefix("NT") || seedTimeStr.firstMatch(of: seedTimePattern) != nil else { return nil }
         
         let seedTime = parseSeedTime(seedTimeStr)
@@ -202,13 +197,13 @@ struct RegexParser {
 
     /// Parses a single relay team entry line.
     func parseRelayEntry(line: String) -> RelayEntry? {
-        let parts = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        let parts = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         guard parts.count >= 3 else { return nil }
         guard let place = Int(parts[0]) else { return nil }
         
         let seedTimeStr = parts.last!
-        let timeRegex = #/^\d+:\d{2}/#
-        let secRegex = #/^\d{1,2}\.\d{2}/#
+        let timeRegex = #/^[Xx]?\d+:\d{2}/#
+        let secRegex = #/^[Xx]?\d{1,2}\.\d{2}/#
         guard seedTimeStr.uppercased().hasPrefix("NT") || 
               seedTimeStr.firstMatch(of: timeRegex) != nil || 
               seedTimeStr.firstMatch(of: secRegex) != nil else { return nil }
@@ -226,6 +221,11 @@ struct RegexParser {
         // Remove trailing course indicators (Y, L, S) or standard flags (e.g. B for bonus)
         if trimmed.hasSuffix("Y") || trimmed.hasSuffix("L") || trimmed.hasSuffix("S") || trimmed.hasSuffix("B") {
             trimmed.removeLast()
+        }
+        
+        // Remove exhibition "X" prefix
+        if trimmed.hasPrefix("X") {
+            trimmed.removeFirst()
         }
         
         if trimmed.hasPrefix("NT") {
@@ -259,8 +259,12 @@ struct RegexParser {
 
     // MARK: - Skip Line Check
 
-    /// Returns `true` if the line is a known column header that should be ignored.
     func isSkipLine(_ line: String) -> Bool {
+        // Skip continuation headers completely
+        if line.hasPrefix("Event ") && line.contains("...") {
+            return true
+        }
+        
         let skips = [
             "Name Age Team Seed Time", 
             "Name Age Team", 
@@ -270,7 +274,10 @@ struct RegexParser {
             "HY-TEK", 
             "Elig. Year", 
             "Std Seed",
-            "King Marlin Swim Club"
+            "King Marlin Swim Club",
+            "Psych Sheet",
+            "KMSC Spring Twister",
+            "King Marlin Spring Twister"
         ]
         return skips.contains(where: { line.contains($0) })
     }

@@ -183,4 +183,59 @@ final class RegexParserTests: XCTestCase {
             XCTAssertEqual(r1.seedTime, 133.43)
         } else { XCTFail() }
     }
+
+    func testRealHyTekPsychSheetData() throws {
+        let text = """
+        King Marlin Swim Club HY-TEK's MEET MANAGER 7.0 - 2:20 PM 4/28/2026 Page 1
+        2026 KMSC Spring Twister - 5/2/2026 to 5/3/2026
+        2026 King Marlin Spring Twister
+        Psych Sheet
+        Event 3 Girls 12 & Under 100 LC Meter Freestyle
+        Name Age Team Seed Time
+        1 Mitchell, Braylin R 12 SSC-OK 1:03.39
+        34 Moffitt, Lexi M 9 AESC-OK NT
+        Event 4 ...(Boys 12 & Under 100 LC Meter Freestyle)
+        Event 5 Boys 12 & Under 100 LC Meter Freestyle
+        Team Relay Seed Time
+        1 KMS-OK A 2:12.03
+        12 ST-OK A NT
+        """
+
+        let events = try parser.parseEvents(from: text)
+        
+        // We expect Event 3 and Event 5
+        XCTAssertEqual(events.count, 2, "Should parse exactly two events")
+        
+        let event3 = events[0]
+        XCTAssertEqual(event3.number, 3)
+        XCTAssertEqual(event3.name, "12 & Under 100 LC Freestyle")
+        XCTAssertFalse(event3.isRelay)
+        XCTAssertEqual(event3.entries.count, 2)
+        
+        if case .individual(let e1) = event3.entries[0] {
+            XCTAssertEqual(e1.swimmer.name, "Mitchell, Braylin R")
+            XCTAssertEqual(e1.swimmer.age, "12")
+            XCTAssertEqual(e1.seedTime, 63.39)
+        } else { XCTFail() }
+        
+        if case .individual(let e2) = event3.entries[1] {
+            XCTAssertEqual(e2.swimmer.name, "Moffitt, Lexi M")
+            XCTAssertEqual(e2.seedTime, TimeInterval.infinity)
+        } else { XCTFail() }
+        
+        let event5 = events[1]
+        XCTAssertEqual(event5.number, 5)
+        XCTAssertEqual(event5.entries.count, 2)
+        XCTAssertTrue(event5.isRelay)
+        
+        if case .relay(let r1) = event5.entries[0] {
+            XCTAssertEqual(r1.teamName, "KMS-OK A")
+            XCTAssertEqual(r1.seedTime, 132.03)
+        } else { XCTFail() }
+        
+        if case .relay(let r2) = event5.entries[1] {
+            XCTAssertEqual(r2.teamName, "ST-OK A")
+            XCTAssertEqual(r2.seedTime, TimeInterval.infinity)
+        } else { XCTFail() }
+    }
 }
