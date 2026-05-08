@@ -8,13 +8,21 @@ import Foundation
 /// Parses psych sheet plain text into an array of Event models.
 struct RegexParser {
 
+    // MARK: - Types
+    
+    enum LineType {
+        case eventHeader(Event)
+        case eventContinuation
+        case individualEntry(IndividualEntry)
+        case relayEntry(RelayEntry)
+        case skip
+        case unknown
+    }
+
     // MARK: - Public API
 
     /// Main entry point. Takes the full merged column text from PDFExtractor
     /// and returns all parsed events with their entries.
-    ///
-    /// - Parameter text: Plain text string from PDFExtractor.extractText(from:)
-    /// - Returns: Array of Event objects in document order.
     func parseEvents(from text: String) throws -> [Event] {
         print("=== RAW TEXT FIRST 500 CHARS ===")
         print(String(text.prefix(500)))
@@ -28,36 +36,33 @@ struct RegexParser {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
             
-            // Skip known header lines
-            if isSkipLine(trimmed) { continue }
+            let type = debugClassifyLine(trimmed, currentEvent: currentEvent)
             
-            // Try parsing event header
-            if let header = parseEventHeader(line: trimmed) {
-                // If it's a continuation of the current event, ignore the new header
-                if let current = currentEvent, current.number == header.number {
-                    continue
-                }
-                
-                if let current = currentEvent {
+            switch type {
+            case .eventHeader(let header):
+                // If it's a new event number, finalize the previous one
+                if let current = currentEvent, current.number != header.number {
                     events.append(current)
                 }
+                
+                // If same number, we treat as potentially new header for the same event
+                // but usually the continuation check handles the "..." case.
                 currentEvent = header
+                
+            case .eventContinuation:
                 continue
-            }
-            
-            // Parse entries
-            if var event = currentEvent {
-                if event.isRelay {
-                    if let relayEntry = parseRelayEntry(line: trimmed) {
-                        event.entries.append(.relay(relayEntry))
-                        currentEvent = event
-                    }
-                } else {
-                    if let indEntry = parseIndividualEntry(line: trimmed) {
-                        event.entries.append(.individual(indEntry))
-                        currentEvent = event
-                    }
-                }
+                
+            case .individualEntry(let entry):
+                currentEvent?.entries.append(.individual(entry))
+                
+            case .relayEntry(let entry):
+                currentEvent?.entries.append(.relay(entry))
+                
+            case .skip:
+                continue
+                
+            case .unknown:
+                continue
             }
         }
         
@@ -77,9 +82,10 @@ struct RegexParser {
 
     /// Parses a single event header line.
     func parseEventHeader(line: String) -> Event? {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        // Explicitly reject continuation headers
+        if line.contains("...") { return nil }
         
-        let parts = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        let parts = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         guard parts.count >= 3, parts[0].uppercased() == "EVENT" else { return nil }
         
         let eventNumStr = parts[1].trimmingCharacters(in: CharacterSet(charactersIn: ":"))
@@ -117,17 +123,6 @@ struct RegexParser {
             }
         }
         
-        // Fallback to last number if no common distance found
-        if distance == 0 {
-            for i in stride(from: parts.count - 1, to: genderIdx, by: -1) {
-                if let val = Int(parts[i]) {
-                    distance = val
-                    distanceIdx = i
-                    break
-                }
-            }
-        }
-        
         if distance == 0 { return nil }
         
         var strokeParts: [String] = []
@@ -143,11 +138,7 @@ struct RegexParser {
             ageGroup = parts[(genderIdx + 1)..<distanceIdx].joined(separator: " ")
         }
         
-        var eventName = "\(ageGroup) \(distance) \(stroke)".trimmingCharacters(in: .whitespaces)
-        if ageGroup.isEmpty {
-            eventName = "\(distance) \(stroke)"
-        }
-        
+        let eventName = ageGroup.isEmpty ? "\(distance) \(stroke)" : "\(ageGroup) \(distance) \(stroke)"
         let isRelay = eventName.uppercased().contains("RELAY")
         
         return Event(
@@ -164,29 +155,24 @@ struct RegexParser {
     func parseIndividualEntry(line: String) -> IndividualEntry? {
         let parts = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         guard parts.count >= 4 else { return nil }
+        
+        // Place should be first
         guard let place = Int(parts[0]) else { return nil }
         
+        // Seed time should be last (validate pattern)
         let seedTimeStr = parts.last!
-        let seedTimePattern = #/^[Xx]?\d+/#
-        guard seedTimeStr.uppercased().hasPrefix("NT") || seedTimeStr.firstMatch(of: seedTimePattern) != nil else { return nil }
+        let timePattern = #/^[Xx]?(\d+:)?\d+(\.\d+)?/#
+        guard seedTimeStr.uppercased().hasPrefix("NT") || seedTimeStr.firstMatch(of: timePattern) != nil else { return nil }
         
         let seedTime = parseSeedTime(seedTimeStr)
         
-        var hasStd = false
-        if parts.count >= 6 {
-            let potentialStd = parts[parts.count - 2].uppercased()
-            let stdRegex = #/^[A-Z]{1,3}$/#
-            if potentialStd.firstMatch(of: stdRegex) != nil && !["SO", "FR", "JR", "SR"].contains(potentialStd) {
-                hasStd = true
-            }
-        }
-        
+        // Find Age/Year (must be before seed/std)
         var ageIdx = -1
-        let searchStart = hasStd ? parts.count - 3 : parts.count - 2
+        let agePattern = #/^(\d{1,2}|SO|FR|JR|SR)$/#
         
-        for i in stride(from: searchStart, through: 1, by: -1) {
-            let partUpper = parts[i].uppercased()
-            if partUpper.firstMatch(of: #/^\d{1,2}$/#) != nil || partUpper.firstMatch(of: #/^(SO|FR|JR|SR)$/#) != nil {
+        // Scan backwards from near the end
+        for i in stride(from: parts.count - 2, through: 1, by: -1) {
+            if parts[i].uppercased().firstMatch(of: agePattern) != nil {
                 ageIdx = i
                 break
             }
@@ -196,6 +182,15 @@ struct RegexParser {
         
         let name = parts[1..<ageIdx].joined(separator: " ")
         let age = parts[ageIdx]
+        
+        // Team code is between age and seed time (excluding any standard code)
+        var hasStd = false
+        if parts.count >= 6 {
+            let potentialStd = parts[parts.count - 2].uppercased()
+            if potentialStd.firstMatch(of: #/^[A-Z]{1,3}$/#) != nil && !["SO", "FR", "JR", "SR"].contains(potentialStd) {
+                hasStd = true
+            }
+        }
         
         let teamEnd = hasStd ? parts.count - 2 : parts.count - 1
         let teamCode = parts[(ageIdx + 1)..<teamEnd].joined(separator: " ")
@@ -211,11 +206,10 @@ struct RegexParser {
         guard let place = Int(parts[0]) else { return nil }
         
         let seedTimeStr = parts.last!
-        let timeRegex = #/^[Xx]?\d+:\d{2}/#
-        let secRegex = #/^[Xx]?\d{1,2}\.\d{2}/#
-        guard seedTimeStr.uppercased().hasPrefix("NT") || 
-              seedTimeStr.firstMatch(of: timeRegex) != nil || 
-              seedTimeStr.firstMatch(of: secRegex) != nil else { return nil }
+        // Simple heuristic for relay seed times
+        if !seedTimeStr.uppercased().hasPrefix("NT") && !seedTimeStr.contains(":") && !seedTimeStr.contains(".") {
+            return nil
+        }
         
         let teamName = parts[1..<(parts.count - 1)].joined(separator: " ")
         let seedTime = parseSeedTime(seedTimeStr)
@@ -227,19 +221,16 @@ struct RegexParser {
     func parseSeedTime(_ raw: String) -> TimeInterval {
         var trimmed = raw.trimmingCharacters(in: .whitespaces).uppercased()
         
-        // Remove trailing course indicators (Y, L, S) or standard flags (e.g. B for bonus)
-        if trimmed.hasSuffix("Y") || trimmed.hasSuffix("L") || trimmed.hasSuffix("S") || trimmed.hasSuffix("B") {
-            trimmed.removeLast()
+        // Remove trailing course indicators
+        for suffix in ["Y", "L", "S", "B"] {
+            if trimmed.hasSuffix(suffix) {
+                trimmed.removeLast()
+                break
+            }
         }
         
-        // Remove exhibition "X" prefix
-        if trimmed.hasPrefix("X") {
-            trimmed.removeFirst()
-        }
-        
-        if trimmed.hasPrefix("NT") {
-            return TimeInterval.infinity
-        }
+        if trimmed.hasPrefix("X") { trimmed.removeFirst() }
+        if trimmed.hasPrefix("NT") { return TimeInterval.infinity }
         
         // MM:SS.XX
         if let match = trimmed.firstMatch(of: #/^(\d+):(\d{2})\.(\d{2})$/#) {
@@ -269,11 +260,6 @@ struct RegexParser {
     // MARK: - Skip Line Check
 
     func isSkipLine(_ line: String) -> Bool {
-        // Skip continuation headers completely
-        if line.hasPrefix("Event ") && line.contains("...") {
-            return true
-        }
-        
         let skips = [
             "Name Age Team Seed Time", 
             "Name Age Team", 
@@ -283,11 +269,36 @@ struct RegexParser {
             "HY-TEK", 
             "Elig. Year", 
             "Std Seed",
-            "King Marlin Swim Club",
-            "Psych Sheet",
-            "KMSC Spring Twister",
-            "King Marlin Spring Twister"
+            "Psych Sheet"
         ]
         return skips.contains(where: { line.contains($0) })
+    }
+
+    // MARK: - Debug Trace Helper
+
+    func debugClassifyLine(_ line: String, currentEvent: Event?) -> LineType {
+        if isSkipLine(line) { return .skip }
+        
+        if line.hasPrefix("Event ") && line.contains("...") {
+            return .eventContinuation
+        }
+        
+        if let header = parseEventHeader(line: line) {
+            return .eventHeader(header)
+        }
+        
+        if let event = currentEvent {
+            if event.isRelay {
+                if let relay = parseRelayEntry(line: line) {
+                    return .relayEntry(relay)
+                }
+            } else {
+                if let individual = parseIndividualEntry(line: line) {
+                    return .individualEntry(individual)
+                }
+            }
+        }
+        
+        return .unknown
     }
 }
