@@ -61,6 +61,8 @@ struct RegexParser {
             events.append(current)
         }
         
+        print("Parsed \(events.count) events, first event entries: \(events.first?.entries.count ?? 0)")
+        
         return events
     }
 
@@ -94,9 +96,9 @@ struct RegexParser {
         for i in stride(from: parts.count - 1, to: genderIdx, by: -1) {
             if let val = Int(parts[i]) {
                 var isDist = commonDistances.contains(val)
-                if !isDist && i + 1 < parts.count {
-                    let next = parts[i+1].uppercased()
-                    if ["YARD", "YARDS", "METER", "METERS"].contains(next) {
+                if !isDist {
+                    let window = (i+1..<min(i+4, parts.count)).map { parts[$0].uppercased() }
+                    if window.contains(where: { ["YARD","YARDS","LC","SC","METER","METERS","Y","M"].contains($0) }) {
                         isDist = true
                     }
                 }
@@ -124,7 +126,7 @@ struct RegexParser {
         var strokeParts: [String] = []
         for i in (distanceIdx + 1)..<parts.count {
             let p = parts[i]
-            if ["YARD", "YARDS", "METER", "METERS"].contains(p.uppercased()) { continue }
+            if ["YARD", "YARDS", "METER", "METERS", "LC", "SC", "LCM", "SCY", "SCM"].contains(p.uppercased()) { continue }
             strokeParts.append(p)
         }
         let stroke = strokeParts.joined(separator: " ")
