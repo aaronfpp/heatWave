@@ -42,6 +42,18 @@ final class RegexParserTests: XCTestCase {
         XCTAssertNil(result, "Continuation headers should be ignored")
     }
 
+    func testExactCopiedEventHeaders() throws {
+        // Exact copies from Hy-Tek sheets
+        let e1 = parser.parseEventHeader(line: "Event 3 Girls 12 & Under 100 LC Meter Freestyle")
+        XCTAssertEqual(e1?.number, 3)
+        XCTAssertEqual(e1?.distance, 100)
+        XCTAssertEqual(e1?.stroke, "Freestyle")
+        
+        let e2 = parser.parseEventHeader(line: "Event 5 Boys 12 & Under 100 LC Meter Freestyle")
+        XCTAssertEqual(e2?.number, 5)
+        XCTAssertEqual(e2?.gender, .male)
+    }
+
     func testCollegiateEventHeader() throws {
         // "Event 12 Women 200 Yard Backstroke"
         let result = parser.parseEventHeader(line: "Event 12 Women 200 Yard Backstroke")
@@ -96,6 +108,13 @@ final class RegexParserTests: XCTestCase {
         XCTAssertEqual(result?.seedTime, 65.44)
     }
 
+    func testEntryWithExhibitionTime() throws {
+        // "4 Doe, Jane 14 Team-OK X28.50"
+        let result = parser.parseIndividualEntry(line: "4 Doe, Jane 14 Team-OK X28.50")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.seedTime, 28.50)
+    }
+
     // MARK: - Relay Entry Parsing
 
     func testStandardRelayEntry() throws {
@@ -115,6 +134,13 @@ final class RegexParserTests: XCTestCase {
         XCTAssertEqual(result?.seedTime, TimeInterval.infinity)
     }
 
+    func testExactRelayRow() throws {
+        // Real text: "1 KMS-OK A 2:12.03"
+        let result = parser.parseRelayEntry(line: "1 KMS-OK A 2:12.03")
+        XCTAssertEqual(result?.place, 1)
+        XCTAssertEqual(result?.seedTime, 132.03)
+    }
+
     // MARK: - Seed Time Normalisation
 
     func testNTNormalisesCorrectly() throws {
@@ -129,6 +155,14 @@ final class RegexParserTests: XCTestCase {
         XCTAssertEqual(parser.parseSeedTime("28.50"), 28.50)
     }
 
+    func testAllKnownTimeFormats() throws {
+        XCTAssertEqual(parser.parseSeedTime("1:03.39"), 63.39)
+        XCTAssertEqual(parser.parseSeedTime("X28.50"), 28.50)
+        XCTAssertEqual(parser.parseSeedTime("NT"), TimeInterval.infinity)
+        XCTAssertEqual(parser.parseSeedTime("58.2Y"), 58.2)
+        XCTAssertEqual(parser.parseSeedTime("15:32.75"), 932.75)
+    }
+
     // MARK: - Skip Line Detection
 
     func testSkipLinesAreIgnored() throws {
@@ -136,6 +170,13 @@ final class RegexParserTests: XCTestCase {
         XCTAssertTrue(parser.isSkipLine("Team Relay Seed Time"))
         XCTAssertTrue(parser.isSkipLine("King Marlin Swim Club HY-TEK's MEET MANAGER..."))
         XCTAssertFalse(parser.isSkipLine("1 Mitchell, Braylin R 12 SSC-OK 1:03.39"))
+    }
+
+    func testExactHyTekPageHeadersAreIgnored() throws {
+        XCTAssertTrue(parser.isSkipLine("King Marlin Swim Club HY-TEK's MEET MANAGER 7.0 - 2:20 PM 4/28/2026 Page 1"))
+        XCTAssertTrue(parser.isSkipLine("2026 KMSC Spring Twister - 5/2/2026 to 5/3/2026"))
+        XCTAssertTrue(parser.isSkipLine("2026 King Marlin Spring Twister"))
+        XCTAssertTrue(parser.isSkipLine("Psych Sheet"))
     }
 
     // MARK: - Full Text Parse Integration

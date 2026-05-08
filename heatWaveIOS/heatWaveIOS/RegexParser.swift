@@ -7,6 +7,9 @@ import Foundation
 
 /// Parses psych sheet plain text into an array of Event models.
 struct RegexParser {
+    
+    /// Enable this to print classification traces during development
+    var isDebugTraceEnabled: Bool = false
 
     // MARK: - Types
     
@@ -24,9 +27,11 @@ struct RegexParser {
     /// Main entry point. Takes the full merged column text from PDFExtractor
     /// and returns all parsed events with their entries.
     func parseEvents(from text: String) throws -> [Event] {
-        print("=== RAW TEXT FIRST 500 CHARS ===")
-        print(String(text.prefix(500)))
-        print("=== END RAW TEXT ===")
+        if isDebugTraceEnabled {
+            print("=== RAW TEXT FIRST 500 CHARS ===")
+            print(String(text.prefix(500)))
+            print("=== END RAW TEXT ===")
+        }
         
         var events: [Event] = []
         var currentEvent: Event?
@@ -36,7 +41,11 @@ struct RegexParser {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
             
-            let type = debugClassifyLine(trimmed, currentEvent: currentEvent)
+            let type = classifyLine(trimmed, currentEvent: currentEvent)
+            
+            if isDebugTraceEnabled {
+                print("Trace [\(type)]: \(trimmed)")
+            }
             
             switch type {
             case .eventHeader(let header):
@@ -62,6 +71,9 @@ struct RegexParser {
                 continue
                 
             case .unknown:
+                if isDebugTraceEnabled {
+                    print("⚠️ UNKNOWN LINE: \(trimmed)")
+                }
                 continue
             }
         }
@@ -70,9 +82,11 @@ struct RegexParser {
             events.append(current)
         }
         
-        print("=== PARSE RESULT: \(events.count) events ===")
-        for e in events {
-            print("Event \(e.number): \(e.entries.count) entries")
+        if isDebugTraceEnabled {
+            print("=== PARSE RESULT: \(events.count) events ===")
+            for e in events {
+                print("Event \(e.number): \(e.entries.count) entries")
+            }
         }
         
         return events
@@ -276,17 +290,22 @@ struct RegexParser {
 
     // MARK: - Debug Trace Helper
 
-    func debugClassifyLine(_ line: String, currentEvent: Event?) -> LineType {
+    /// Classifies a line based on strict, mutually exclusive rules.
+    func classifyLine(_ line: String, currentEvent: Event?) -> LineType {
+        // 1. Check for skips first (page headers, column headers)
         if isSkipLine(line) { return .skip }
         
+        // 2. Check for event continuation explicitly
         if line.hasPrefix("Event ") && line.contains("...") {
             return .eventContinuation
         }
         
+        // 3. Try to parse as an Event Header
         if let header = parseEventHeader(line: line) {
             return .eventHeader(header)
         }
         
+        // 4. Try to parse as an entry (requires an active event context)
         if let event = currentEvent {
             if event.isRelay {
                 if let relay = parseRelayEntry(line: line) {
@@ -299,6 +318,7 @@ struct RegexParser {
             }
         }
         
+        // 5. If nothing matched, it's unknown
         return .unknown
     }
 }
