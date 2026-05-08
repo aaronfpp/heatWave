@@ -15,9 +15,9 @@ Event 5 Girls 10 & Under 200 Yard Freestyle
 Name Age Team Seed Time
 1 Adhikari, Sadie 10 King Marlin Swim-OK 2:28.21
 
-Event 5 ...(Girls 10 & Under 200 Yard Freestyle)
+Event 3 Girls 12 & Under 100 LC Meter Freestyle
 Name Age Team Seed Time
-25 Vincent, Daisy 10 Bison Aquatic Cl-OK 3:19.31
+1 Mitchell, Braylin R 12 SSC-OK 1:03.39
 """
 
 print(f"Parsing sample text...")

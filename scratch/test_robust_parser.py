@@ -107,8 +107,9 @@ def parse_event_header(line: str) -> Tuple[int, str, str, int, str] | None:
             val = int(parts[i])
             # If it's a common distance, or it's followed by Yard/Meter, it's likely the distance
             is_dist = val in common_distances
-            if not is_dist and i + 1 < len(parts):
-                if parts[i+1].upper() in ["YARD", "YARDS", "METER", "METERS"]:
+            if not is_dist:
+                window = [p.upper() for p in parts[i+1:min(i+4, len(parts))]]
+                if any(unit in window for unit in ["YARD", "YARDS", "LC", "SC", "METER", "METERS", "Y", "M"]):
                     is_dist = True
             
             if is_dist:
@@ -127,11 +128,11 @@ def parse_event_header(line: str) -> Tuple[int, str, str, int, str] | None:
     if distance == 0:
         return None
         
-    # Stroke is everything after distance (ignoring "Yard" or "Meter")
+    # Stroke is everything after distance (skipping "Yard", "Meter", "LC", "SC", etc.)
     stroke_parts = []
     for i in range(distance_idx + 1, len(parts)):
         p = parts[i]
-        if p.upper() in ["YARD", "YARDS", "METER", "METERS"]:
+        if p.upper() in ["YARD", "YARDS", "METER", "METERS", "LC", "SC", "LCM", "SCY", "SCM"]:
             continue
         stroke_parts.append(p)
     
@@ -201,6 +202,7 @@ class TestParser(unittest.TestCase):
             ("Event 1 Women 1650 Freestyle", (1, "Women", "1650 Freestyle", 1650, "Freestyle")),
             ("Event 5 ...(Girls 10 & Under 200 Yard Freestyle)", (5, "Girls", "10 & Under 200 Freestyle", 200, "Freestyle")),
             ("Event 29: Girls 50 Yard Butterfly", (29, "Girls", "50 Butterfly", 50, "Butterfly")),
+            ("Event 3 Girls 12 & Under 100 LC Meter Freestyle", (3, "Girls", "12 & Under 100 Freestyle", 100, "Freestyle")),
         ]
         for line, expected in cases:
             with self.subTest(line=line):

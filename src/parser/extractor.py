@@ -89,8 +89,9 @@ def parse_event_header(line: str) -> Tuple[int, str, str, int, str] | None:
         if re.match(r"^\d+$", parts[i]):
             val = int(parts[i])
             is_dist = val in common_distances
-            if not is_dist and i + 1 < len(parts):
-                if parts[i+1].upper() in ["YARD", "YARDS", "METER", "METERS"]:
+            if not is_dist:
+                window = [p.upper() for p in parts[i+1:min(i+4, len(parts))]]
+                if any(unit in window for unit in ["YARD", "YARDS", "LC", "SC", "METER", "METERS", "Y", "M"]):
                     is_dist = True
             
             if is_dist:
@@ -109,11 +110,11 @@ def parse_event_header(line: str) -> Tuple[int, str, str, int, str] | None:
     if distance == 0:
         return None
         
-    # Stroke is everything after distance (skipping "Yard" or "Meter")
+    # Stroke is everything after distance (skipping "Yard", "Meter", "LC", "SC", etc.)
     stroke_parts = []
     for i in range(distance_idx + 1, len(parts)):
         p = parts[i]
-        if p.upper() in ["YARD", "YARDS", "METER", "METERS"]:
+        if p.upper() in ["YARD", "YARDS", "METER", "METERS", "LC", "SC", "LCM", "SCY", "SCM"]:
             continue
         stroke_parts.append(p)
     
