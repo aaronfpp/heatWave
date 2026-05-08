@@ -16,6 +16,10 @@ struct RegexParser {
     /// - Parameter text: Plain text string from PDFExtractor.extractText(from:)
     /// - Returns: Array of Event objects in document order.
     func parseEvents(from text: String) throws -> [Event] {
+        print("=== RAW TEXT FIRST 500 CHARS ===")
+        print(String(text.prefix(500)))
+        print("=== END RAW TEXT ===")
+        
         var events: [Event] = []
         var currentEvent: Event?
         
@@ -61,7 +65,10 @@ struct RegexParser {
             events.append(current)
         }
         
-        print("Parsed \(events.count) events, first event entries: \(events.first?.entries.count ?? 0)")
+        print("=== PARSE RESULT: \(events.count) events ===")
+        for e in events {
+            print("Event \(e.number): \(e.entries.count) entries")
+        }
         
         return events
     }
