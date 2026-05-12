@@ -190,23 +190,54 @@ struct RegexParser {
         let agePattern = #/^(\d{1,2}|SO|FR|JR|SR)$/#
         for i in 1..<parts.count {
             if i == timeIdx { continue }
-            if parts[i].uppercased().firstMatch(of: agePattern) != nil {
+            // Clean up "(Age" or "15)" artifacts from PDFKit extraction
+            let cleanPart = parts[i].replacingOccurrences(of: "(Age", with: "").replacingOccurrences(of: ")", with: "")
+            if cleanPart.uppercased().firstMatch(of: agePattern) != nil {
                 ageIdx = i
                 break
             }
         }
         
-        let age = ageIdx != -1 ? parts[ageIdx] : nil
+        let age = ageIdx != -1 ? parts[ageIdx].replacingOccurrences(of: "(Age", with: "").replacingOccurrences(of: ")", with: "") : nil
         
-        // Name starts at index 1 and goes up to the first found component (either ageIdx or timeIdx).
-        let firstComponentIdx = [ageIdx, timeIdx].filter { $0 > 0 }.min() ?? parts.count
-        let name = parts[1..<firstComponentIdx].joined(separator: " ")
+        // Find Team Code (Hybrid Approach)
+        var teamIdxs: [Int] = []
         
-        // Team is everything else that isn't used!
-        var teamParts: [String] = []
+        // 1. Structural inference: if age is present, team is usually between age and time
+        if ageIdx != -1 && ageIdx < timeIdx && timeIdx - ageIdx > 1 {
+            teamIdxs = Array((ageIdx + 1)..<timeIdx)
+        } 
+        // Or if time is NOT at the end, team is likely after time
+        else if timeIdx < parts.count - 1 {
+            let start = max(timeIdx, ageIdx) + 1
+            if start < parts.count {
+                teamIdxs = Array(start..<parts.count)
+            }
+        } 
+        
+        // 2. Active Fuzzy Matching: if structure failed (e.g. no age, time at end), actively search the middle
+        if teamIdxs.isEmpty {
+            for i in 1..<parts.count {
+                if i == timeIdx || i == ageIdx { continue }
+                let p = parts[i].uppercased()
+                let isAllCaps = p == parts[i] && p.count >= 2 && p.count <= 6 && p.rangeOfCharacter(from: .decimalDigits) == nil
+                if parts[i].contains("-") || isAllCaps {
+                    teamIdxs.append(i)
+                }
+            }
+        }
+
+        // Assemble Name from whatever indices we DIDN'T use
+        var nameParts: [String] = []
         for i in 1..<parts.count {
-            if i == ageIdx || i == timeIdx { continue }
-            if i < firstComponentIdx { continue } // already part of name
+            if i == timeIdx || i == ageIdx || teamIdxs.contains(i) { continue }
+            nameParts.append(parts[i])
+        }
+        let name = nameParts.joined(separator: " ")
+        
+        // Assemble Team
+        var teamParts: [String] = []
+        for i in teamIdxs {
             teamParts.append(parts[i])
         }
         
@@ -216,8 +247,10 @@ struct RegexParser {
                 teamParts.removeLast()
             }
         }
-        
         let teamCode = teamParts.joined(separator: " ")
+        
+        if name.isEmpty { return nil }
+        
         let swimmer = Swimmer(name: name, age: age, teamCode: teamCode)
         return IndividualEntry(place: place, swimmer: swimmer, seedTime: seedTime)
     }
