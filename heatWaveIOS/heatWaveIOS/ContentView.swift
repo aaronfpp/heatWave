@@ -154,7 +154,7 @@ struct ContentView: View {
                 }
                 
                 Section("Parsed Events (\(events.count))") {
-                    List(events, id: \.number) { event in
+                    List(events) { event in
                         HStack {
                             VStack(alignment: .leading) {
                                 Text("Event \(event.number): \(event.name)")

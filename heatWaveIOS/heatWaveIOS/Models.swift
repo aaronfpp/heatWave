@@ -27,7 +27,9 @@ struct Swimmer: Codable, Equatable {
 }
 
 /// Represents an individual swimmer's entry in an event.
-struct IndividualEntry: Codable, Equatable {
+struct IndividualEntry: Codable, Equatable, Identifiable {
+    /// Unique identifier for SwiftUI Lists.
+    var id: String { "\(place)-\(swimmer.name)" }
     /// The placement/ranking based on seed time.
     let place: Int
     /// The swimmer participating in the event.
@@ -37,7 +39,9 @@ struct IndividualEntry: Codable, Equatable {
 }
 
 /// Represents a relay team's entry in an event.
-struct RelayEntry: Codable, Equatable {
+struct RelayEntry: Codable, Equatable, Identifiable {
+    /// Unique identifier for SwiftUI Lists.
+    var id: String { "\(place)-\(teamName)" }
     /// The placement/ranking based on seed time.
     let place: Int
     /// The team name and designation (e.g. "Tulsa Swim-OK A").
@@ -53,7 +57,9 @@ enum EventEntry: Codable, Equatable {
 }
 
 /// Represents a competitive swimming event.
-struct Event: Codable, Equatable {
+struct Event: Codable, Equatable, Identifiable {
+    /// Unique identifier for SwiftUI Lists (Event numbers are unique).
+    var id: Int { number }
     /// The event number.
     let number: Int
     /// The descriptive name of the event (e.g. "10 & Under 200 Freestyle").
@@ -92,7 +98,9 @@ struct LaneAssignment: Codable, Equatable {
 }
 
 /// A complete heat sheet for an event.
-struct HeatSheet: Codable, Equatable {
+struct HeatSheet: Codable, Equatable, Identifiable {
+    /// Unique identifier for SwiftUI Lists.
+    var id: Int { event.number }
     /// The event.
     let event: Event
     /// The total number of lanes available.
