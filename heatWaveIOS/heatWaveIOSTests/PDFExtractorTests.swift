@@ -15,6 +15,7 @@ import PDFKit
 import UIKit
 @testable import heatWaveIOS
 
+@MainActor
 final class PDFExtractorTests: XCTestCase {
 
     // MARK: - System Under Test

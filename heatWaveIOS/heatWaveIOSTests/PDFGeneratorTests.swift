@@ -4,6 +4,7 @@
 import XCTest
 @testable import heatWaveIOS
 
+@MainActor
 final class PDFGeneratorTests: XCTestCase {
     
     var generator: PDFGenerator!
