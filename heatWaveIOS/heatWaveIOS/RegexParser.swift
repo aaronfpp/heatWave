@@ -168,47 +168,56 @@ struct RegexParser {
     /// Parses a single individual swimmer entry line.
     func parseIndividualEntry(line: String) -> IndividualEntry? {
         let parts = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-        guard parts.count >= 4 else { return nil }
-        
-        // Place should be first
+        guard parts.count >= 3 else { return nil } // place, name, time at least
         guard let place = Int(parts[0]) else { return nil }
         
-        // Seed time should be last (validate pattern)
-        let seedTimeStr = parts.last!
-        let timePattern = #/^[Xx]?(\d+:)?\d+(\.\d+)?/#
-        guard seedTimeStr.uppercased().hasPrefix("NT") || seedTimeStr.firstMatch(of: timePattern) != nil else { return nil }
+        // Find seed time. Scan from end to start to find first valid time.
+        var timeIdx = -1
+        let timePattern = #/^[Xx]?(\d+:)?\d{1,2}\.\d{2}$/# // stricter decimal check
+        for i in stride(from: parts.count - 1, through: 1, by: -1) {
+            let p = parts[i].uppercased()
+            if p.hasPrefix("NT") || p.firstMatch(of: timePattern) != nil {
+                timeIdx = i
+                break
+            }
+        }
         
-        let seedTime = parseSeedTime(seedTimeStr)
+        if timeIdx == -1 { return nil }
+        let seedTime = parseSeedTime(parts[timeIdx])
         
-        // Find Age/Year (must be before seed/std)
+        // Find Age/Year. Usually a 1-2 digit number or FR/SO/JR/SR.
         var ageIdx = -1
         let agePattern = #/^(\d{1,2}|SO|FR|JR|SR)$/#
-        
-        // Scan backwards from near the end
-        for i in stride(from: parts.count - 2, through: 1, by: -1) {
+        for i in 1..<parts.count {
+            if i == timeIdx { continue }
             if parts[i].uppercased().firstMatch(of: agePattern) != nil {
                 ageIdx = i
                 break
             }
         }
         
-        if ageIdx == -1 { return nil }
+        let age = ageIdx != -1 ? parts[ageIdx] : nil
         
-        let name = parts[1..<ageIdx].joined(separator: " ")
-        let age = parts[ageIdx]
+        // Name starts at index 1 and goes up to the first found component (either ageIdx or timeIdx).
+        let firstComponentIdx = [ageIdx, timeIdx].filter { $0 > 0 }.min() ?? parts.count
+        let name = parts[1..<firstComponentIdx].joined(separator: " ")
         
-        // Team code is between age and seed time (excluding any standard code)
-        var hasStd = false
-        if parts.count >= 6 {
-            let potentialStd = parts[parts.count - 2].uppercased()
-            if potentialStd.firstMatch(of: #/^[A-Z]{1,3}$/#) != nil && !["SO", "FR", "JR", "SR"].contains(potentialStd) {
-                hasStd = true
+        // Team is everything else that isn't used!
+        var teamParts: [String] = []
+        for i in 1..<parts.count {
+            if i == ageIdx || i == timeIdx { continue }
+            if i < firstComponentIdx { continue } // already part of name
+            teamParts.append(parts[i])
+        }
+        
+        // Remove standard code if it's the last team part and looks like a standard
+        if teamParts.count > 1, let last = teamParts.last {
+            if last.uppercased().firstMatch(of: #/^[A-Z]{1,3}$/#) != nil && !["SO","FR","JR","SR"].contains(last.uppercased()) {
+                teamParts.removeLast()
             }
         }
         
-        let teamEnd = hasStd ? parts.count - 2 : parts.count - 1
-        let teamCode = parts[(ageIdx + 1)..<teamEnd].joined(separator: " ")
-        
+        let teamCode = teamParts.joined(separator: " ")
         let swimmer = Swimmer(name: name, age: age, teamCode: teamCode)
         return IndividualEntry(place: place, swimmer: swimmer, seedTime: seedTime)
     }
@@ -219,14 +228,26 @@ struct RegexParser {
         guard parts.count >= 3 else { return nil }
         guard let place = Int(parts[0]) else { return nil }
         
-        let seedTimeStr = parts.last!
-        // Simple heuristic for relay seed times
-        if !seedTimeStr.uppercased().hasPrefix("NT") && !seedTimeStr.contains(":") && !seedTimeStr.contains(".") {
-            return nil
+        var timeIdx = -1
+        let timePattern = #/^[Xx]?(\d+:)?\d{1,2}\.\d{2}$/#
+        for i in stride(from: parts.count - 1, through: 1, by: -1) {
+            let p = parts[i].uppercased()
+            if p.hasPrefix("NT") || p.firstMatch(of: timePattern) != nil {
+                timeIdx = i
+                break
+            }
         }
         
-        let teamName = parts[1..<(parts.count - 1)].joined(separator: " ")
-        let seedTime = parseSeedTime(seedTimeStr)
+        if timeIdx == -1 { return nil }
+        let seedTime = parseSeedTime(parts[timeIdx])
+        
+        // Team name is everything except place and time
+        var teamParts: [String] = []
+        for i in 1..<parts.count {
+            if i == timeIdx { continue }
+            teamParts.append(parts[i])
+        }
+        let teamName = teamParts.joined(separator: " ")
         
         return RelayEntry(place: place, teamName: teamName, seedTime: seedTime)
     }

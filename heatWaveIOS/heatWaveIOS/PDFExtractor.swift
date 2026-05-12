@@ -169,31 +169,49 @@ struct PDFExtractor {
     /// extraction to glyphs whose bounding boxes intersect the given rect.
     /// This correctly separates side-by-side columns without interleaving.
     func extractTextFromPage(_ page: PDFPage) -> String {
-        let bounds = page.bounds(for: .mediaBox)
+        let bounds = page.bounds(for: .cropBox)
         let splitX = bounds.width * columnSplitRatio
 
-        // Left column: x from 0 to splitX
+        // Left column: Ensuring we cover the full height from bottom to top
         let leftRect = CGRect(
             x: bounds.origin.x,
             y: bounds.origin.y,
             width: splitX,
-            height: bounds.height
+            height: bounds.size.height
         )
 
-        // Right column: x from splitX to right edge
+        // Right column
         let rightRect = CGRect(
             x: bounds.origin.x + splitX,
             y: bounds.origin.y,
-            width: bounds.width - splitX,
-            height: bounds.height
+            width: bounds.size.width - splitX,
+            height: bounds.size.height
         )
 
-        // `string(for:)` returns nil when there are no glyphs in the rect —
-        // use "" as the fallback so we never produce optional noise downstream.
-        let leftText  = page.selection(for: leftRect)?.string ?? ""
-        let rightText = page.selection(for: rightRect)?.string ?? ""
+        // IMPORTANT: PDFKit text extraction order can be erratic with selection(for:).
+        // Forcing a top-down, left-to-right sort ensures stable parsing.
+        let leftText  = extractSortedText(from: page.selection(for: leftRect), on: page)
+        let rightText = extractSortedText(from: page.selection(for: rightRect), on: page)
 
         // Preserve the Python merge order: left column first, then right
         return leftText + "\n" + rightText
+    }
+    
+    private func extractSortedText(from selection: PDFSelection?, on page: PDFPage) -> String {
+        guard let selection = selection else { return "" }
+        let lines = selection.selectionsByLine()
+        
+        let sortedLines = lines.sorted { a, b in
+            let boundsA = a.bounds(for: page)
+            let boundsB = b.bounds(for: page)
+            // If they are on the same visual line (within 5 points), sort left-to-right
+            if abs(boundsA.origin.y - boundsB.origin.y) < 5.0 {
+                return boundsA.origin.x < boundsB.origin.x
+            }
+            // Otherwise sort top-to-bottom. iOS PDF origin is bottom-left, so highest Y is top!
+            return boundsA.origin.y > boundsB.origin.y
+        }
+        
+        return sortedLines.compactMap { $0.string }.joined(separator: "\n")
     }
 }
