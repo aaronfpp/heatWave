@@ -165,15 +165,20 @@ struct RegexParser {
         )
     }
 
-    /// Parses a single individual swimmer entry line.
+    /// Parses a single individual swimmer entry line using an order-agnostic approach.
     func parseIndividualEntry(line: String) -> IndividualEntry? {
-        let parts = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-        guard parts.count >= 3 else { return nil } // place, name, time at least
+        // 1. Strip commas to prevent parsing errors on names like "Smith, John"
+        let cleanLine = line.replacingOccurrences(of: ",", with: "")
+        // Use whitespacesAndNewlines to guarantee invisible \r characters are stripped
+        var parts = cleanLine.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        guard parts.count >= 3 else { return nil } 
+        
         guard let place = Int(parts[0]) else { return nil }
         
-        // Find seed time. Scan from end to start to find first valid time.
+        // 2. SEED TIME
         var timeIdx = -1
-        let timePattern = #/^[Xx]?(\d+:)?\d{1,2}\.\d{2}$/# // stricter decimal check
+        // Removed the strict $ anchor to survive trailing "Y", "L", or invisible characters
+        let timePattern = #/^[Xx]?(\d+:)?\d{1,2}\.\d{2}/# 
         for i in stride(from: parts.count - 1, through: 1, by: -1) {
             let p = parts[i].uppercased()
             if p.hasPrefix("NT") || p.firstMatch(of: timePattern) != nil {
@@ -185,69 +190,52 @@ struct RegexParser {
         if timeIdx == -1 { return nil }
         let seedTime = parseSeedTime(parts[timeIdx])
         
-        // Find Age/Year. Usually a 1-2 digit number or FR/SO/JR/SR.
+        // 3. AGE
         var ageIdx = -1
         let agePattern = #/^(\d{1,2}|SO|FR|JR|SR)$/#
         for i in 1..<parts.count {
             if i == timeIdx { continue }
+            
             // Clean up "(Age" or "15)" artifacts from PDFKit extraction
             let cleanPart = parts[i].replacingOccurrences(of: "(Age", with: "").replacingOccurrences(of: ")", with: "")
+            
             if cleanPart.uppercased().firstMatch(of: agePattern) != nil {
                 ageIdx = i
                 break
             }
         }
         
-        let age = ageIdx != -1 ? parts[ageIdx].replacingOccurrences(of: "(Age", with: "").replacingOccurrences(of: ")", with: "") : nil
+        // Provide a default empty string if age is missing
+        let age = ageIdx != -1 ? parts[ageIdx].replacingOccurrences(of: "(Age", with: "").replacingOccurrences(of: ")", with: "") : ""
         
-        // Find Team Code (Hybrid Approach)
-        var teamIdxs: [Int] = []
-        
-        // 1. Structural inference: if age is present, team is usually between age and time
-        if ageIdx != -1 && ageIdx < timeIdx && timeIdx - ageIdx > 1 {
-            teamIdxs = Array((ageIdx + 1)..<timeIdx)
-        } 
-        // Or if time is NOT at the end, team is likely after time
-        else if timeIdx < parts.count - 1 {
-            let start = max(timeIdx, ageIdx) + 1
-            if start < parts.count {
-                teamIdxs = Array(start..<parts.count)
-            }
-        } 
-        
-        // 2. Active Fuzzy Matching: if structure failed (e.g. no age, time at end), actively search the middle
-        if teamIdxs.isEmpty {
-            for i in 1..<parts.count {
-                if i == timeIdx || i == ageIdx { continue }
-                let p = parts[i].uppercased()
-                let isAllCaps = p == parts[i] && p.count >= 2 && p.count <= 6 && p.rangeOfCharacter(from: .decimalDigits) == nil
-                if parts[i].contains("-") || isAllCaps {
-                    teamIdxs.append(i)
-                }
+        // 4. TEAM CODE
+        var teamIdx = -1
+        for i in 1..<parts.count {
+            if i == timeIdx || i == ageIdx { continue }
+            let p = parts[i].uppercased()
+            let isAllCaps = p == parts[i] && p.count >= 2 && p.count <= 6 && p.rangeOfCharacter(from: .decimalDigits) == nil
+            
+            if p.contains("-") || isAllCaps {
+                teamIdx = i
+                break
             }
         }
 
-        // Assemble Name from whatever indices we DIDN'T use
+        // 5. NAME
         var nameParts: [String] = []
         for i in 1..<parts.count {
-            if i == timeIdx || i == ageIdx || teamIdxs.contains(i) { continue }
-            nameParts.append(parts[i])
-        }
-        let name = nameParts.joined(separator: " ")
-        
-        // Assemble Team
-        var teamParts: [String] = []
-        for i in teamIdxs {
-            teamParts.append(parts[i])
-        }
-        
-        // Remove standard code if it's the last team part and looks like a standard
-        if teamParts.count > 1, let last = teamParts.last {
-            if last.uppercased().firstMatch(of: #/^[A-Z]{1,3}$/#) != nil && !["SO","FR","JR","SR"].contains(last.uppercased()) {
-                teamParts.removeLast()
+            if i == timeIdx || i == ageIdx || i == teamIdx { continue }
+            
+            let p = parts[i]
+            // Only drop known standard codes to protect middle initials like "R"
+            if ["A", "BB", "AA", "AAA", "B", "C"].contains(p.uppercased()) {
+                continue
             }
+            nameParts.append(p)
         }
-        let teamCode = teamParts.joined(separator: " ")
+        
+        let name = nameParts.joined(separator: " ")
+        let teamCode = teamIdx != -1 ? parts[teamIdx] : ""
         
         if name.isEmpty { return nil }
         
@@ -257,12 +245,14 @@ struct RegexParser {
 
     /// Parses a single relay team entry line.
     func parseRelayEntry(line: String) -> RelayEntry? {
-        let parts = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        let cleanLine = line.replacingOccurrences(of: ",", with: " ")
+        var parts = cleanLine.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
         guard parts.count >= 3 else { return nil }
         guard let place = Int(parts[0]) else { return nil }
         
         var timeIdx = -1
-        let timePattern = #/^[Xx]?(\d+:)?\d{1,2}\.\d{2}$/#
+        // Removed the strict $ anchor here as well
+        let timePattern = #/^[Xx]?(\d+:)?\d{1,2}\.\d{2}/#
         for i in stride(from: parts.count - 1, through: 1, by: -1) {
             let p = parts[i].uppercased()
             if p.hasPrefix("NT") || p.firstMatch(of: timePattern) != nil {
@@ -274,7 +264,6 @@ struct RegexParser {
         if timeIdx == -1 { return nil }
         let seedTime = parseSeedTime(parts[timeIdx])
         
-        // Team name is everything except place and time
         var teamParts: [String] = []
         for i in 1..<parts.count {
             if i == timeIdx { continue }
