@@ -18,7 +18,7 @@ final class SeedingEngineTests: XCTestCase {
     // MARK: - Validation
 
     func testInvalidLaneCountThrows() throws {
-        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: [], isRelay: false)
+        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: [], isRelay: false, gender: .female)
         XCTAssertThrowsError(try engine.seedEvent(event, lanes: 3)) { error in
             guard case SeedingError.invalidLaneCount(3) = error else {
                 XCTFail("Expected invalidLaneCount error")
@@ -70,7 +70,7 @@ final class SeedingEngineTests: XCTestCase {
     // MARK: - Event Seeding
 
     func testEmptyEventReturnsEmptyHeatSheet() throws {
-        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: [], isRelay: false)
+        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: [], isRelay: false, gender: .female)
         let sheet = try engine.seedEvent(event, lanes: 8)
         XCTAssertEqual(sheet.heats, 0)
         XCTAssertTrue(sheet.assignments.isEmpty)
@@ -82,7 +82,7 @@ final class SeedingEngineTests: XCTestCase {
         for i in 1...17 {
             entries.append(.individual(IndividualEntry(place: i, swimmer: Swimmer(name: "S\(i)", age: nil, teamCode: "T"), seedTime: Double(i))))
         }
-        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false)
+        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false, gender: .female)
         let sheet = try engine.seedEvent(event, lanes: 8)
         XCTAssertEqual(sheet.heats, 3)
     }
@@ -94,7 +94,7 @@ final class SeedingEngineTests: XCTestCase {
             // Give them times 10.0 down to 1.0
             entries.append(.individual(IndividualEntry(place: i, swimmer: Swimmer(name: "S\(i)", age: nil, teamCode: "T"), seedTime: Double(20 - i))))
         }
-        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false)
+        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false, gender: .female)
         let sheet = try engine.seedEvent(event, lanes: 8)
         
         let heat1 = sheet.assignments.filter { $0.heat == 1 }
@@ -112,7 +112,7 @@ final class SeedingEngineTests: XCTestCase {
             entries.append(.individual(IndividualEntry(place: i+1, swimmer: Swimmer(name: "S\(i)", age: nil, teamCode: "T"), seedTime: Double(10 - i))))
         }
         
-        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false)
+        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false, gender: .female)
         let sheet = try engine.seedEvent(event, lanes: 8)
         
         // 9 entries in 8 lanes -> Heat 1 has 1 entry (the NT), Heat 2 has 8 entries.
@@ -135,7 +135,7 @@ final class SeedingEngineTests: XCTestCase {
         entries.append(.individual(IndividualEntry(place: 2, swimmer: Swimmer(name: "Mid", age: nil, teamCode: "T"), seedTime: 2.0)))
         entries.append(.individual(IndividualEntry(place: 3, swimmer: Swimmer(name: "Slowest", age: nil, teamCode: "T"), seedTime: 3.0)))
         
-        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false)
+        let event = Event(number: 1, name: "Test", distance: 50, stroke: "Free", entries: entries, isRelay: false, gender: .female)
         let sheet = try engine.seedEvent(event, lanes: 8)
         
         let heat1 = sheet.assignments

@@ -73,10 +73,8 @@ struct Event: Codable, Equatable, Identifiable {
     /// Whether the event is a relay.
     let isRelay: Bool
     
-    /// Gender derived from event number parity (odd = female, even = male).
-    var gender: Gender {
-        return number % 2 != 0 ? .female : .male
-    }
+    /// The gender of the event participants.
+    let gender: Gender
 }
 
 /// Represents a single heat within an event.

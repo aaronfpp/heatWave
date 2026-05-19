@@ -81,7 +81,7 @@ struct PDFExtractor {
     /// Minimum character count across the first `scannedCheckPageCount` pages
     /// before the document is considered text-based. Below this the extractor
     /// throws `PDFExtractionError.scannedPDF`.
-    var scannedCharacterThreshold: Int = 100
+    var scannedCharacterThreshold: Int = 10
 
     /// Number of pages to sample for the scanned-PDF heuristic.
     var scannedCheckPageCount: Int = 3

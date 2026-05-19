@@ -58,8 +58,8 @@ final class RegexParserTests: XCTestCase {
         // "Event 12 Women 200 Yard Backstroke"
         let result = parser.parseEventHeader(line: "Event 12 Women 200 Yard Backstroke")
         XCTAssertNotNil(result)
-        // Per USA Swimming rules and our constraints, even = male, ignoring "Women"
-        XCTAssertEqual(result?.gender, .male)
+        // The parser now respects the explicit "Women" text over the odd/even rule
+        XCTAssertEqual(result?.gender, .female)
         XCTAssertEqual(result?.distance, 200)
         XCTAssertEqual(result?.stroke, "Backstroke")
         XCTAssertEqual(result?.name, "200 Backstroke")

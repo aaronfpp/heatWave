@@ -216,11 +216,21 @@ struct RegexParser {
 
         var genderIdx = -1
 
+        var genderEnum: Gender = .male
+
         for (i, part) in parts.enumerated() {
 
-            if i >= 2 && genders.contains(part.uppercased()) {
+            let p = part.uppercased()
+
+            if i >= 2 && genders.contains(p) {
 
                 genderIdx = i
+
+                if ["GIRLS", "WOMEN", "FEMALE"].contains(p) {
+
+                    genderEnum = .female
+
+                }
 
                 break
 
@@ -324,7 +334,9 @@ struct RegexParser {
 
             entries: [],
 
-            isRelay: isRelay
+            isRelay: isRelay,
+
+            gender: genderEnum
 
         )
 
@@ -356,13 +368,20 @@ struct RegexParser {
 
         // Find Age/Year. Usually a 1-2 digit number or FR/SO/JR/SR.
         var ageIdx = -1
-        let agePattern = #/^(\d{1,2}|SO|FR|JR|SR)$/#
+        var textAgeIdx = -1
         for i in 1..<parts.count {
             if i == timeIdx { continue }
-            if parts[i].uppercased().firstMatch(of: agePattern) != nil {
+            let p = parts[i].uppercased()
+            if p.firstMatch(of: #/^(\d{1,2})$/#) != nil {
                 ageIdx = i
                 break
+            } else if textAgeIdx == -1 && p.firstMatch(of: #/^(SO|FR|JR|SR)$/#) != nil {
+                textAgeIdx = i
             }
+        }
+        
+        if ageIdx == -1 {
+            ageIdx = textAgeIdx
         }
 
         let age = ageIdx != -1 ? parts[ageIdx] : nil
@@ -413,7 +432,7 @@ struct RegexParser {
 
         var timeIdx = -1
 
-        let timePattern = #/^[Xx]?(\d+:)?\d{1,2}\.\d{2}$/#
+        let timePattern = #/^[Xx]?(\d+:)?\d{1,2}\.\d{2}/#
 
         for i in stride(from: parts.count - 1, through: 1, by: -1) {
 
@@ -521,7 +540,7 @@ struct RegexParser {
 
         // SS.XX
 
-        if let match = trimmed.firstMatch(of: #/^(\d{1,2})\.(\d{2})$/#) {
+        if let match = trimmed.firstMatch(of: #/^(\d+)\.(\d{2})$/#) {
 
             let sec = Double(match.1) ?? 0
 

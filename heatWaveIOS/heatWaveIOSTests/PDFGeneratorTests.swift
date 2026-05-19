@@ -36,7 +36,7 @@ final class PDFGeneratorTests: XCTestCase {
     }
     
     func testGenerateCreatesFileAndReturnsCorrectURL() throws {
-        let event = Event(number: 1, name: "Test Event", distance: 50, stroke: "Free", entries: [], isRelay: false)
+        let event = Event(number: 1, name: "Test Event", distance: 50, stroke: "Free", entries: [], isRelay: false, gender: .female)
         let sheet = HeatSheet(event: event, lanes: 8, heats: 0, assignments: [])
         
         let filename = "OutputTest.pdf"
@@ -47,7 +47,7 @@ final class PDFGeneratorTests: XCTestCase {
     }
     
     func testOutputFileIsNonEmpty() throws {
-        let event = Event(number: 1, name: "Test Event", distance: 50, stroke: "Free", entries: [], isRelay: false)
+        let event = Event(number: 1, name: "Test Event", distance: 50, stroke: "Free", entries: [], isRelay: false, gender: .female)
         let entry = EventEntry.individual(IndividualEntry(place: 1, swimmer: Swimmer(name: "A", age: nil, teamCode: "T"), seedTime: 60))
         let sheet = HeatSheet(event: event, lanes: 8, heats: 1, assignments: [LaneAssignment(entry: entry, heat: 1, lane: 4)])
         
@@ -75,7 +75,7 @@ final class PDFGeneratorTests: XCTestCase {
     func testGeneratorHandlesMultipleEventsAndHeatsWithoutCrashing() throws {
         var sheets: [HeatSheet] = []
         for i in 1...5 {
-            let event = Event(number: i, name: "Event \(i)", distance: 100, stroke: "Fly", entries: [], isRelay: false)
+            let event = Event(number: i, name: "Event \(i)", distance: 100, stroke: "Fly", entries: [], isRelay: false, gender: .female)
             var assignments: [LaneAssignment] = []
             for j in 1...20 {
                 let heat = (j / 8) + 1
