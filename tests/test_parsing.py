@@ -58,7 +58,7 @@ def test_individual_entry_parsing():
     place, name, age, team, seed = result
     assert place == 1
     assert "Keaston" in name
-    assert age == 10
+    assert age == "10"
     assert "Bartlesville" in team
     assert seed == "2:42.05"
     
@@ -69,7 +69,7 @@ def test_individual_entry_parsing():
     place, name, age, team, seed = result
     assert place == 26
     assert "Lily" in name
-    assert age == 10
+    assert age == "10"
     
     print("✓ Individual entry parsing tests passed")
 

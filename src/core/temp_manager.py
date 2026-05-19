@@ -166,9 +166,9 @@ class TempManager:
                 if current_time - last_access > self.user_timeout:
                     inactive_users.append(user_id)
 
-            for user_id in inactive_users:
-                if self.cleanup_user_temp_dir(user_id):
-                    users_cleaned += 1
+        for user_id in inactive_users:
+            if self.cleanup_user_temp_dir(user_id):
+                users_cleaned += 1
 
         # Clean up old files in remaining user directories
         try:

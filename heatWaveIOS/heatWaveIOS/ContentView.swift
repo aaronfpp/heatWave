@@ -264,7 +264,7 @@ struct ContentView: View {
                 let msg: String
                 switch error {
                 case .scannedPDF:
-                    msg = "This PDF appears to be image-based. Scanned PDFs are not supported yet."
+                    msg = "This PDF appears to be image-based. Scanned PDFs are not yet supported."
                 case .emptyDocument:
                     msg = "The PDF appears to be empty or corrupted."
                 default:

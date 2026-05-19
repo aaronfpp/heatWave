@@ -15,3 +15,5 @@ build/
 data/output/*
 !data/output/.gitkeep
 .vscode/
+**/test/
+scratch/extracted_psych_sheet.txt

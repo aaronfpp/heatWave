@@ -78,7 +78,7 @@ struct RegexParser {
 
         for line in lines {
 
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
             if trimmed.isEmpty { continue }
 
@@ -100,19 +100,19 @@ struct RegexParser {
 
             case .eventHeader(let header):
 
-                // If it's a new event number, finalize the previous one
+                if let current = currentEvent {
 
-                if let current = currentEvent, current.number != header.number {
+                    if current.number == header.number && current.name == header.name {
+
+                        // Continuation header with same name/number - ignore and keep current
+
+                        continue
+
+                    }
 
                     events.append(current)
 
                 }
-
-               
-
-                // If same number, we treat as potentially new header for the same event
-
-                // but usually the continuation check handles the "..." case.
 
                 currentEvent = header
 
@@ -200,7 +200,7 @@ struct RegexParser {
 
        
 
-        let parts = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        let parts = line.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
 
         guard parts.count >= 3, parts[0].uppercased() == "EVENT" else { return nil }
 

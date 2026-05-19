@@ -279,4 +279,27 @@ final class RegexParserTests: XCTestCase {
             XCTAssertEqual(r2.seedTime, TimeInterval.infinity)
         } else { XCTFail() }
     }
+
+    func testDuplicateHeaderWithoutDotsPreservesEntries() throws {
+        let text = """
+        Event 1 Girls 10 & Under 200 Yard Freestyle
+        Name Age Team Seed Time
+        1 Meek, Keaston 10 Bartlesville Spl-OK 2:42.05
+        Event 1 Girls 10 & Under 200 Yard Freestyle
+        2 Smith, Anna 10 Club Team 2:45.00
+        """
+        let events = try parser.parseEvents(from: text)
+        XCTAssertEqual(events.count, 1)
+        let event = events[0]
+        XCTAssertEqual(event.number, 1)
+        XCTAssertEqual(event.entries.count, 2, "Duplicate event header should not wipe out previous entries.")
+    }
+
+    func testCarriageReturnHandlingInHeader() throws {
+        let line = "Event 1 Girls 10 & Under 200 Yard Freestyle\r"
+        let result = parser.parseEventHeader(line: line)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.stroke, "Freestyle", "Stroke should not contain trailing carriage returns.")
+    }
 }
+

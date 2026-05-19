@@ -50,9 +50,9 @@ def test_entry_sorting():
     print("Testing entry sorting...")
     
     swimmers = [
-        Swimmer(name="Swimmer A", age=10, team_code="TEAM-A"),
-        Swimmer(name="Swimmer B", age=10, team_code="TEAM-B"),
-        Swimmer(name="Swimmer C", age=10, team_code="TEAM-C"),
+        Swimmer(name="Swimmer A", age="10", team_code="TEAM-A"),
+        Swimmer(name="Swimmer B", age="10", team_code="TEAM-B"),
+        Swimmer(name="Swimmer C", age="10", team_code="TEAM-C"),
     ]
     
     entries = [
@@ -75,7 +75,7 @@ def test_seeding_with_sample_entries():
     """Test seeding algorithm with a small manually created event."""
     print("\nTesting seeding algorithm...")
     
-    swimmers = [Swimmer(name=f"Swimmer {i}", age=10, team_code=f"TEAM{i}") for i in range(1, 11)]
+    swimmers = [Swimmer(name=f"Swimmer {i}", age="10", team_code=f"TEAM{i}") for i in range(1, 11)]
     
     entries = [
         Entry(place=i, swimmer=swimmers[i-1], seed_time=f"2:{59-i*2:02d}.00")
