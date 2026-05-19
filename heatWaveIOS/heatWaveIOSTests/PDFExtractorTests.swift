@@ -217,6 +217,39 @@ final class PDFExtractorTests: XCTestCase {
                        "Extraction with non-default split ratio should produce non-empty text.")
     }
 
+    func testVisualLineGroupingAndSorting() throws {
+        // Build a PDF with three text segments on the same visual line
+        // but with slightly different Y coordinates (within 5.0 points) and in scrambled
+        // drawing/Y order, to verify they get grouped into a single line and sorted left-to-right.
+        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        
+        let data = renderer.pdfData { ctx in
+            ctx.beginPage()
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 12),
+                .foregroundColor: UIColor.black
+            ]
+            // We draw them with slightly different Y, and in a scrambled order.
+            // Segment 3: x=200, y=10.2 (drawn first)
+            ("SegmentThree" as NSString).draw(at: CGPoint(x: 200, y: 10.2), withAttributes: attrs)
+            // Segment 1: x=10, y=9.8 (drawn second)
+            ("SegmentOne" as NSString).draw(at: CGPoint(x: 10, y: 9.8), withAttributes: attrs)
+            // Segment 2: x=100, y=10.0 (drawn third)
+            ("SegmentTwo" as NSString).draw(at: CGPoint(x: 100, y: 10.0), withAttributes: attrs)
+        }
+        
+        let doc = PDFDocument(data: data)!
+        let text = extractor.extractFullText(from: doc)
+        
+        // Since all three segments are within 5.0 points Y difference and in the left column (< 306),
+        // they should be grouped into a single line, sorted left-to-right, and joined by space.
+        XCTAssertTrue(
+            text.contains("SegmentOne SegmentTwo SegmentThree"),
+            "Expected segments to be grouped and sorted left-to-right. Got: \(text)"
+        )
+    }
+
     // MARK: - Multi-Page Extraction
 
     func testMultiPageDocumentConcatenatesWithNewline() throws {

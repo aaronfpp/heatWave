@@ -201,17 +201,44 @@ struct PDFExtractor {
         guard let selection = selection else { return "" }
         let lines = selection.selectionsByLine()
         
-        let sortedLines = lines.sorted { a, b in
+        // 1. Sort all lines strictly by Y coordinate descending (top-to-bottom).
+        //    Use X coordinate as a tie-breaker. This forms a strict weak ordering.
+        let roughSorted = lines.sorted { a, b in
             let boundsA = a.bounds(for: page)
             let boundsB = b.bounds(for: page)
-            // If they are on the same visual line (within 5 points), sort left-to-right
-            if abs(boundsA.origin.y - boundsB.origin.y) < 5.0 {
+            if boundsA.origin.y == boundsB.origin.y {
                 return boundsA.origin.x < boundsB.origin.x
             }
-            // Otherwise sort top-to-bottom. iOS PDF origin is bottom-left, so highest Y is top!
             return boundsA.origin.y > boundsB.origin.y
         }
         
-        return sortedLines.compactMap { $0.string }.joined(separator: "\n")
+        // 2. Group selections that are on the same visual line (within a 5.0 point vertical threshold)
+        var rows: [[PDFSelection]] = []
+        for line in roughSorted {
+            let bounds = line.bounds(for: page)
+            if let lastRow = rows.last,
+               let firstInRow = lastRow.first {
+                let firstBounds = firstInRow.bounds(for: page)
+                if abs(firstBounds.origin.y - bounds.origin.y) < 5.0 {
+                    rows[rows.count - 1].append(line)
+                } else {
+                    rows.append([line])
+                }
+            } else {
+                rows.append([line])
+            }
+        }
+        
+        // 3. Sort selections within each row left-to-right (by X coordinate),
+        //    and merge them with a space separator.
+        let mappedRows = rows.map { row in
+            let sortedRow = row.sorted { a, b in
+                a.bounds(for: page).origin.x < b.bounds(for: page).origin.x
+            }
+            return sortedRow.compactMap { $0.string }.joined(separator: " ")
+        }
+        
+        // 4. Join visual rows with newlines to form the final column text.
+        return mappedRows.joined(separator: "\n")
     }
 }
